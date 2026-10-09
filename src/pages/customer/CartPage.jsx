@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Minus, Plus, Trash, ShoppingBag, Info } from "../../components/icons/Icons.jsx";
 import { EmptyState } from "../../components/common/EmptyState.jsx";
 import { Button } from "../../components/common/Button.jsx";
-import { formatCurrency, getActivePrice } from "../../utils/formatters.js";
+import { formatCurrency, getActivePrice, calculateDeliveryFee } from "../../utils/formatters.js";
 import { useData } from "../../hooks/useData.js";
 import { useCart } from "../../hooks/useCart.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
@@ -47,7 +47,14 @@ function CartPageBase() {
     return lines.reduce((sum, l) => sum + l.saving, 0);
   }, [lines]);
 
-  const deliveryFee = subtotal > 0 ? 500 : 0;
+  const primaryVendor = lines[0]?.product;
+  const deliveryFee = useMemo(() => {
+    return calculateDeliveryFee({
+      subtotal,
+      vendorRegion: primaryVendor?.region,
+      isFreeThreshold: 2000
+    });
+  }, [subtotal, primaryVendor]);
   const total = subtotal + deliveryFee;
 
   const handleQtyChange = useCallback((product, delta, current, step) => {

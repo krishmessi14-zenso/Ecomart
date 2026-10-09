@@ -57,7 +57,7 @@ export function GlobalLocationSelector({
     fetchCountries().then((data) => {
       if (mounted) {
         setCountries(data);
-        if (!value.countryCode && onChange) {
+        if (!value?.countryCode && onChange) {
           const defaultC = data.find((c) => c.code === "IN") || data[0] || { code: "IN", name: "India", currency: "INR" };
           onChange({
             ...value,
@@ -69,7 +69,7 @@ export function GlobalLocationSelector({
       }
     });
     return () => { mounted = false; };
-  }, []);
+  }, [value, onChange]);
 
   // 2. Load Regions when country changes
   useEffect(() => {
@@ -244,7 +244,7 @@ export function GlobalLocationSelector({
         setLocating(false);
         alert(`Location access notice: ${err.message}. Please select your location manually.`);
       },
-      { timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 

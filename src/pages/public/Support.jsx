@@ -4,7 +4,7 @@ import PublicHeader from "../../components/layout/PublicHeader.jsx";
 import { Button } from "../../components/common/Button.jsx";
 import { FormField } from "../../components/common/FormField.jsx";
 import { SearchBox } from "../../components/common/index.js";
-import { Sprout, Check, HelpCircle, FileText, Truck, CreditCard, User, ShieldCheck } from "../../components/icons/Icons.jsx";
+import { HelpCircle, Truck, CreditCard, ShieldCheck } from "../../components/icons/Icons.jsx";
 import { useNotifications } from "../../hooks/useNotifications.js";
 
 const FAQ_CATEGORIES = [
@@ -118,8 +118,7 @@ function SupportBase() {
             color: "#ffffff",
             marginBottom: "36px",
             textAlign: "center",
-            boxShadow: "var(--shadow-md)",
-          }}
+            boxShadow: "var(--shadow-md)"}}
         >
           <span
             style={{
@@ -131,8 +130,7 @@ function SupportBase() {
               borderRadius: "999px",
               fontSize: 12,
               fontWeight: 700,
-              marginBottom: 12,
-            }}
+              marginBottom: 12}}
           >
             <HelpCircle size={14} /> EcoMart Help Center
           </span>
@@ -172,8 +170,7 @@ function SupportBase() {
                   transition: "all 0.2s ease",
                   display: "flex",
                   alignItems: "center",
-                  gap: 12,
-                }}
+                  gap: 12}}
               >
                 <div style={{ width: 36, height: 36, borderRadius: 8, background: isActive ? "var(--brand)" : "var(--bg-soft)", color: isActive ? "#fff" : "var(--brand)", display: "flex", alignItems: "center", justify: "center" }}>
                   <Icon size={18} />
@@ -203,8 +200,7 @@ function SupportBase() {
                     background: "var(--surface)",
                     border: "1px solid var(--border)",
                     borderRadius: "var(--radius-md)",
-                    overflow: "hidden",
-                  }}
+                    overflow: "hidden"}}
                 >
                   <button
                     onClick={() => setOpenFaq(isOpen ? null : idx)}
@@ -220,8 +216,7 @@ function SupportBase() {
                       color: "var(--text)",
                       display: "flex",
                       justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
+                      alignItems: "center"}}
                   >
                     <span>{faq.q}</span>
                     <span style={{ fontSize: 18, color: "var(--brand)" }}>{isOpen ? "−" : "+"}</span>
@@ -234,8 +229,7 @@ function SupportBase() {
                         lineHeight: 1.6,
                         color: "var(--text-muted)",
                         borderTop: "1px solid var(--border)",
-                        paddingTop: 12,
-                      }}
+                        paddingTop: 12}}
                     >
                       {faq.a}
                     </div>
@@ -256,8 +250,7 @@ function SupportBase() {
             background: "var(--surface)",
             borderRadius: "var(--radius-lg)",
             border: "1px solid var(--border)",
-            boxShadow: "var(--shadow-md)",
-          }}
+            boxShadow: "var(--shadow-md)"}}
         >
           <div style={{ textAlign: "center", marginBottom: 24 }}>
             <h2 style={{ fontFamily: "var(--font-heading)", fontSize: 24, fontWeight: 800, margin: "0 0 6px 0" }}>

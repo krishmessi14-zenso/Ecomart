@@ -1,5 +1,5 @@
-import { useState, useCallback, memo } from "react";
-import { Sprout, Check, ArrowLeft, User, MapPin, Store, Tractor, ShieldCheck } from "../icons/Icons.jsx";
+import { useState, memo } from "react";
+import { Sprout, Check, ArrowLeft, ShieldCheck } from "../icons/Icons.jsx";
 import { Button } from "./Button.jsx";
 import { FormField } from "./FormField.jsx";
 import { REGIONS, CATEGORIES } from "../../utils/constants.js";
@@ -88,8 +88,7 @@ function OnboardingModalBase({ open, onClose }) {
         alignItems: "center",
         justifyContent: "center",
         zIndex: 1100,
-        padding: "20px",
-      }}
+        padding: "20px"}}
     >
       <div
         className="fc-slide-up"
@@ -100,16 +99,14 @@ function OnboardingModalBase({ open, onClose }) {
           width: "100%",
           overflow: "hidden",
           boxShadow: "0 24px 60px rgba(0,0,0,0.35)",
-          border: "1px solid var(--border)",
-        }}
+          border: "1px solid var(--border)"}}
       >
         {/* Header with Progress Steps */}
         <div
           style={{
             background: "var(--gradient-hero)",
             padding: "28px 24px 20px 24px",
-            color: "#ffffff",
-          }}
+            color: "#ffffff"}}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -130,8 +127,7 @@ function OnboardingModalBase({ open, onClose }) {
                 fontWeight: 700,
                 padding: "4px 12px",
                 borderRadius: "999px",
-                cursor: "pointer",
-              }}
+                cursor: "pointer"}}
             >
               Skip Onboarding
             </button>
@@ -155,16 +151,14 @@ function OnboardingModalBase({ open, onClose }) {
                         : isActive
                         ? "#ffffff"
                         : "rgba(255,255,255,0.25)",
-                      transition: "background 0.3s ease",
-                    }}
+                      transition: "background 0.3s ease"}}
                   />
                   <span
                     style={{
                       fontSize: 10.5,
                       fontWeight: isActive || isCompleted ? 700 : 500,
                       color: isActive ? "#ffffff" : isCompleted ? "#86efac" : "rgba(255,255,255,0.6)",
-                      textAlign: "center",
-                    }}
+                      textAlign: "center"}}
                   >
                     {label}
                   </span>
@@ -269,8 +263,7 @@ function OnboardingModalBase({ open, onClose }) {
                   fontSize: 12.5,
                   lineHeight: 1.5,
                   color: "var(--text-muted)",
-                  marginTop: 16,
-                }}
+                  marginTop: 16}}
               >
                 💡 <strong>Logistics Routing Tip:</strong> Orders within a 25 km radius receive consolidated cold-chain delivery discounts.
               </div>
@@ -309,8 +302,7 @@ function OnboardingModalBase({ open, onClose }) {
                         cursor: "pointer",
                         display: "flex",
                         alignItems: "center",
-                        justifyContent: "space-between",
-                      }}
+                        justifyContent: "space-between"}}
                     >
                       <span>{cat}</span>
                       {isSelected && <Check size={16} />}
@@ -360,8 +352,7 @@ function OnboardingModalBase({ open, onClose }) {
                   alignItems: "center",
                   justifyContent: "center",
                   margin: "0 auto 16px auto",
-                  border: "2px solid var(--brand)",
-                }}
+                  border: "2px solid var(--brand)"}}
               >
                 <ShieldCheck size={36} />
               </div>
@@ -381,8 +372,7 @@ function OnboardingModalBase({ open, onClose }) {
                   border: "1px solid var(--border)",
                   textAlign: "left",
                   fontSize: 13,
-                  marginBottom: 20,
-                }}
+                  marginBottom: 20}}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                   <span className="fc-soft">Profile Name:</span>
@@ -409,8 +399,7 @@ function OnboardingModalBase({ open, onClose }) {
             borderTop: "1px solid var(--border)",
             display: "flex",
             justify: "space-between",
-            alignItems: "center",
-          }}
+            alignItems: "center"}}
         >
           {step > 1 ? (
             <Button variant="outline" size="sm" onClick={handleBack}>

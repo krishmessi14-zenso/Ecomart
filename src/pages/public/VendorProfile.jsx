@@ -1,13 +1,12 @@
-import { useState, useEffect, useMemo, useCallback, memo } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useState, useEffect, useMemo, memo } from "react";
+import { useParams, useNavigate} from "react-router-dom";
 import { Avatar } from "../../components/common/Avatar.jsx";
 import { Badge } from "../../components/common/Badge.jsx";
 import { Button } from "../../components/common/Button.jsx";
-import { Card } from "../../components/common/Card.jsx";
 import { EmptyState } from "../../components/common/EmptyState.jsx";
 import { ProductCard } from "../../components/product/ProductCard.jsx";
 import { ContactVendorModal } from "../../components/common/ContactVendorModal.jsx";
-import { Check, Star, MapPin, Package, ShoppingBag, ArrowLeft, MessageSquare } from "../../components/icons/Icons.jsx";
+import { MapPin, Package, ShoppingBag, ArrowLeft, MessageSquare } from "../../components/icons/Icons.jsx";
 import { useData } from "../../hooks/useData.js";
 import { useCart } from "../../hooks/useCart.js";
 import { useAuth } from "../../hooks/useAuth.js";
@@ -42,8 +41,7 @@ function VendorProfileBase() {
             verificationStatus: "Verified",
             rating: 4.8,
             about: "Offering premium eco-friendly, sustainable, and zero-waste products. Specializing in plastic-free packaging, organic personal care, and bamboo living goods.",
-            createdAt: "2024-01-15T00:00:00.000Z",
-          });
+            createdAt: "2024-01-15T00:00:00.000Z"});
         }
         setLoading(false);
       })
@@ -104,8 +102,7 @@ function VendorProfileBase() {
             cursor: "pointer",
             color: "var(--text-soft)",
             fontSize: 13,
-            fontWeight: 600,
-          }}
+            fontWeight: 600}}
         >
           <ArrowLeft size={15} /> Back
         </button>
@@ -122,8 +119,7 @@ function VendorProfileBase() {
           boxShadow: "var(--shadow-md)",
           marginBottom: "32px",
           position: "relative",
-          overflow: "hidden",
-        }}
+          overflow: "hidden"}}
       >
         {/* Top Accent Strip */}
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 6, background: "var(--brand)" }} />
@@ -173,8 +169,7 @@ function VendorProfileBase() {
               display: "flex",
               flexDirection: "column",
               gap: 12,
-              minWidth: 200,
-            }}
+              minWidth: 200}}
           >
             <div>
               <span className="fc-soft" style={{ fontSize: 11, display: "block" }}>GROWER RATING</span>

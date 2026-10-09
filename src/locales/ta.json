@@ -35,7 +35,9 @@
     "per": "ஒரு",
     "qty": "எண்ணிக்கை",
     "lightMode": "லைட் மோட்",
-    "darkMode": "டார்க் மோட்"
+    "darkMode": "டார்க் மோட்",
+    "harvestDate": "தயாரித்த தேதி",
+    "manufacturedDate": "தயாரித்த தேதி"
   },
   "navigation": {
     "appName": "EcoMart",
@@ -54,6 +56,8 @@
     "users": "பயனர்கள்",
     "verification": "சரிபார்ப்பு",
     "harvests": "தயாரிப்புகள்",
+    "aiScan": "AI-ஸ்கேன் & தேடு",
+    "scanHistory": "ஸ்கேன் வரலாறு",
     "settings": "அமைப்புகள்",
     "support": "ஆதரவு & உதவி"
   },

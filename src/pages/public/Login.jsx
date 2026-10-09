@@ -1,40 +1,26 @@
-import { useState, useCallback, memo } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
 import { useNotifications } from "../../hooks/useNotifications.js";
-import { FormField } from "../../components/common/FormField.jsx";
 import { Button } from "../../components/common/Button.jsx";
-import { Sprout, AlertTriangle, ShieldCheck } from "../../components/icons/Icons.jsx";
+import {
+  Sprout,
+  AlertTriangle,
+  ShieldCheck,
+  Check,
+  Leaf,
+  Globe,
+  Award,
+  ArrowRight,
+  UserCheck,
+  ShoppingBag,
+  Lock,
+  User,
+  Eye,
+  EyeOff
+} from "../../components/icons/Icons.jsx";
 import PublicHeader from "../../components/layout/PublicHeader.jsx";
-
-const LockIcon = () => (
-  <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-  </svg>
-);
-
-const UserIcon = () => (
-  <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </svg>
-);
-
-const EyeIcon = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-    <circle cx="12" cy="12" r="3" />
-  </svg>
-);
-
-const EyeOffIcon = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-    <line x1="1" y1="1" x2="23" y2="23" />
-  </svg>
-);
 
 function LoginBase() {
   const { t } = useLanguage();
@@ -50,18 +36,46 @@ function LoginBase() {
   const [loginError, setLoginError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Ensure fields are cleared after browser autofill
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setEmail("");
+      setPassword("");
+    }, 150);
+    return () => clearTimeout(timer);
+  }, []);
+
   const togglePasswordVisibility = useCallback(() => {
     setShowPassword((v) => !v);
   }, []);
+
+
+  const [isUnverified, setIsUnverified] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+
+  const handleResendVerification = useCallback(async () => {
+    if (!email.trim()) return;
+    setResendLoading(true);
+    try {
+      const { authService } = await import("../../services/authService.js");
+      const res = await authService.sendOTP(email.trim(), "email_verification");
+      notifySuccess(res.message || "Verification OTP sent to your email!");
+    } catch (err) {
+      setLoginError(err.message || "Failed to resend verification OTP.");
+    } finally {
+      setResendLoading(false);
+    }
+  }, [email, notifySuccess]);
 
   const handleSubmit = useCallback(
     async (e) => {
       e.preventDefault();
       setLoginError("");
+      setIsUnverified(false);
       const validationErrors = {};
 
       if (!email.trim()) {
-        validationErrors.email = "Please enter your email.";
+        validationErrors.email = "Please enter your email address.";
       }
       if (!password) {
         validationErrors.password = "Please enter your password.";
@@ -77,17 +91,22 @@ function LoginBase() {
 
       try {
         const authUser = await login(email, password);
-        notifySuccess(`Welcome back, ${authUser.name}!`);
+        notifySuccess(`Welcome back, ${authUser.name || 'User'}!`);
 
         if (authUser.role === "vendor") {
           navigate("/vendor/dashboard", { replace: true });
         } else if (authUser.role === "admin") {
           navigate("/admin/dashboard", { replace: true });
         } else {
-          navigate("/customer/dashboard", { replace: true });
+          navigate("/customer/marketplace", { replace: true });
         }
       } catch (err) {
-        setLoginError(err.message || "Invalid email or password.");
+        if (err.message?.includes("verify your email") || err.message?.includes("Unverified")) {
+          setIsUnverified(true);
+          setLoginError("Please verify your email address first before signing in.");
+        } else {
+          setLoginError(err.message || "Invalid email or password.");
+        }
       } finally {
         setLoading(false);
       }
@@ -106,215 +125,394 @@ function LoginBase() {
           alignItems: "center",
           justifyContent: "center",
           padding: "40px 20px",
-          background: "linear-gradient(rgba(5, 45, 24, 0.60), rgba(5, 25, 14, 0.72)), url('/images/ecomart-hero.jpg') center/cover no-repeat fixed",
-        }}
+          background: "linear-gradient(135deg, rgba(2, 44, 34, 0.85) 0%, rgba(6, 78, 59, 0.8) 50%, rgba(2, 31, 24, 0.9) 100%), url('/ecomart_bg.jpg') center/cover no-repeat fixed",
+          fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
+          position: "relative",
+          overflow: "hidden"}}
       >
+        {/* Animated Background Mesh & Glowing Orbs */}
+        <div
+          style={{
+            position: "absolute",
+            top: "10%",
+            left: "5%",
+            width: "450px",
+            height: "450px",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(52, 211, 153, 0.15) 0%, transparent 70%)",
+            filter: "blur(60px)",
+            pointerEvents: "none"}}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: "5%",
+            right: "5%",
+            width: "500px",
+            height: "500px",
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(16, 185, 129, 0.18) 0%, transparent 70%)",
+            filter: "blur(70px)",
+            pointerEvents: "none"}}
+        />
+
+        {/* Main Innovative Container */}
         <div
           className="fc-slide-up"
           style={{
-            maxWidth: "960px",
+            maxWidth: "1080px",
             width: "100%",
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-            borderRadius: "var(--radius-lg)",
-            overflow: "hidden",
-            boxShadow: "0 24px 48px rgba(0,0,0,0.3)",
-            border: "1px solid var(--border)",
-            background: "var(--surface)",
-          }}
+            borderRadius: "32px",
+            background: "rgba(6, 38, 25, 0.75)",
+            backdropFilter: "blur(24px)",
+            border: "1px solid rgba(52, 211, 153, 0.2)",
+            boxShadow: "0 40px 100px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08)",
+            padding: "36px",
+            position: "relative",
+            zIndex: 2}}
         >
-          {/* Left Side: Brand Visual */}
+          {/* Top Header Bar */}
           <div
             style={{
-              background: "linear-gradient(rgba(10, 32, 18, 0.82), rgba(5, 19, 11, 0.92)), url('/images/ecomart-hero.jpg') center/cover no-repeat",
-              padding: "44px 36px",
-              color: "#ffffff",
               display: "flex",
-              flexDirection: "column",
+              alignItems: "center",
               justifyContent: "space-between",
-              position: "relative",
-              overflow: "hidden",
-            }}
+              flexWrap: "wrap",
+              gap: 16,
+              marginBottom: 36,
+              paddingBottom: 24,
+              borderBottom: "1px solid rgba(255, 255, 255, 0.12)"}}
           >
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 12,
-                    background: "rgba(255, 255, 255, 0.2)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backdropFilter: "blur(4px)",
-                    color: "#ffffff",
-                  }}
-                >
-                  <Sprout size={22} />
-                </div>
-                <div>
-                  <h2 style={{ fontFamily: "var(--font-heading)", fontSize: 22, fontWeight: 800, margin: 0 }}>
-                    EcoMart
-                  </h2>
-                  <span style={{ fontSize: 11, opacity: 0.85, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Sustainable Marketplace
-                  </span>
-                </div>
-              </div>
-
-              <h1 style={{ fontFamily: "var(--font-heading)", fontSize: 28, fontWeight: 800, lineHeight: 1.25, marginBottom: 16 }}>
-                Welcome Back to EcoMart
-              </h1>
-              <p style={{ fontSize: 14, opacity: 0.9, lineHeight: 1.5, marginBottom: 28 }}>
-                Sign in to access your account dashboard, track orders, manage products, or oversee platform activities.
-              </p>
-
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div
                 style={{
-                  background: "rgba(255,255,255,0.12)",
-                  backdropFilter: "blur(6px)",
-                  padding: "16px",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                }}
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  background: "linear-gradient(135deg, #10b981 0%, #047857 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#ffffff",
+                  boxShadow: "0 6px 18px rgba(16, 185, 129, 0.4)",
+                  border: "1px solid rgba(255, 255, 255, 0.2)"}}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, marginBottom: 6 }}>
-                  <ShieldCheck size={16} /> Automated Role Routing
-                </div>
-                Enter your email and password. Our system automatically directs Customers, Vendors, and Admins to their respective portals.
+                <Sprout size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em" }}>
+                  EcoMart <span style={{ fontSize: 13, fontWeight: 600, color: "#6ee7b7", opacity: 0.9 }}>Portal</span>
+                </h3>
+                <span style={{ fontSize: 12, color: "#94a3b8" }}>Unified B2B & Sustainable Marketplace</span>
               </div>
             </div>
 
-            <div style={{ marginTop: 36, paddingTop: 20, borderTop: "1px solid rgba(255,255,255,0.2)", fontSize: 12, opacity: 0.85 }}>
-              © 2026 EcoMart. Sustainable Products Marketplace.
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                color: "#6ee7b7",
+                background: "rgba(16, 185, 129, 0.15)",
+                padding: "6px 16px",
+                borderRadius: "12px",
+                border: "1px solid rgba(52, 211, 153, 0.25)",
+                display: "flex",
+                alignItems: "center",
+                gap: 6
+              }}
+            >
+              <ShieldCheck size={16} /> Secure Single Sign-In
             </div>
           </div>
 
-          {/* Right Side: Authentication Form */}
-          <div style={{ padding: "40px 36px", background: "var(--surface)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-            <div style={{ marginBottom: 24 }}>
-              <h2 style={{ fontFamily: "var(--font-heading)", fontSize: 24, fontWeight: 800, margin: "0 0 6px 0", color: "var(--text)" }}>
-                Sign In
-              </h2>
-              <p className="fc-muted" style={{ fontSize: 13.5, margin: "0 0 20px 0" }}>
-                Access your EcoMart account
-              </p>
-            </div>
-
-            {/* Error Alert */}
-            {loginError && (
+          {/* Grid Layout: Left Live Ecosystem Showcase & Right Glass Login Form */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+              gap: 36,
+              alignItems: "center"}}
+          >
+            {/* Left Column: Innovative Eco-Impact Visualizer */}
+            <div style={{ color: "#ffffff", paddingRight: 12 }}>
               <div
                 style={{
-                  display: "flex",
+                  display: "inline-flex",
                   alignItems: "center",
-                  gap: 10,
-                  background: "var(--danger-light)",
-                  border: "1px solid var(--danger)",
-                  color: "var(--danger)",
-                  padding: "12px 14px",
-                  borderRadius: "var(--radius-sm)",
-                  marginBottom: 20,
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
+                  gap: 8,
+                  padding: "6px 14px",
+                  borderRadius: "999px",
+                  background: "rgba(16, 185, 129, 0.18)",
+                  border: "1px solid rgba(52, 211, 153, 0.3)",
+                  color: "#6ee7b7",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  marginBottom: 20}}
               >
-                <AlertTriangle size={18} />
-                <span>{loginError}</span>
+                <Leaf size={14} /> Zero-Carbon Ecosystem
               </div>
-            )}
 
-            <form onSubmit={handleSubmit}>
-              {/* Email Input */}
-              <FormField label="Email Address" error={errors.email}>
-                <div style={{ position: "relative", width: "100%", display: "flex", alignItems: "center" }}>
-                  <div style={{ position: "absolute", left: 12, color: "var(--text-soft)", display: "flex" }}>
-                    <UserIcon />
-                  </div>
-                  <input
-                    className={`fc-input ${errors.email ? "fc-input-error" : ""}`}
-                    type="email"
-                    placeholder="Enter your email address"
-                    autoComplete="username"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    style={{ paddingLeft: 36 }}
-                    required
-                  />
+              <h1
+                style={{
+                  fontFamily: "'Plus Jakarta Sans', sans-serif",
+                  fontSize: 34,
+                  fontWeight: 800,
+                  lineHeight: 1.2,
+                  marginBottom: 16,
+                  letterSpacing: "-0.03em",
+                  background: "linear-gradient(135deg, #ffffff 0%, #a7f3d0 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent"}}
+              >
+                Sustainable Commerce, Redefined.
+              </h1>
+
+              <p style={{ fontSize: 14.5, color: "#cbd5e1", lineHeight: 1.65, marginBottom: 28 }}>
+                One unified portal for buyers, verified vendors, and platform administrators. Log in with your email to access your personalized portal.
+              </p>
+
+              {/* Live Impact Counter Pills */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div
+                  style={{
+                    padding: "16px",
+                    borderRadius: "18px",
+                    background: "rgba(255, 255, 255, 0.06)",
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                    backdropFilter: "blur(12px)"}}
+                >
+                  <div style={{ fontSize: 22, fontWeight: 800, color: "#34d399", marginBottom: 2 }}>12.8k+ Kg</div>
+                  <div style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>CO₂ Impact Avoided</div>
                 </div>
-              </FormField>
 
-              {/* Password Input */}
-              <FormField label="Password" error={errors.password}>
-                <div style={{ position: "relative", width: "100%", display: "flex", alignItems: "center" }}>
-                  <div style={{ position: "absolute", left: 12, color: "var(--text-soft)", display: "flex" }}>
-                    <LockIcon />
-                  </div>
-                  <input
-                    className={`fc-input ${errors.password ? "fc-input-error" : ""}`}
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    style={{ paddingLeft: 36, paddingRight: 40 }}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={togglePasswordVisibility}
-                    style={{
-                      position: "absolute",
-                      right: 12,
-                      background: "transparent",
-                      border: "none",
-                      cursor: "pointer",
-                      color: "var(--text-soft)",
-                      display: "flex",
-                      padding: 4,
-                    }}
-                  >
-                    {showPassword ? <EyeOffIcon /> : <EyeIcon />}
-                  </button>
+                <div
+                  style={{
+                    padding: "16px",
+                    borderRadius: "18px",
+                    background: "rgba(255, 255, 255, 0.06)",
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                    backdropFilter: "blur(12px)"}}
+                >
+                  <div style={{ fontSize: 22, fontWeight: 800, color: "#34d399", marginBottom: 2 }}>100%</div>
+                  <div style={{ fontSize: 12, color: "#94a3b8", fontWeight: 600 }}>Audited Eco Vendors</div>
                 </div>
-              </FormField>
+              </div>
+            </div>
 
-              {/* Remember Me & Forgot Password Row */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, fontSize: 12.5 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", color: "var(--text-muted)" }}>
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    style={{ accentColor: "var(--brand)" }}
-                  />
-                  Remember me
-                </label>
-                <Link to="/forgot-password" style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "underline" }}>
-                  Forgot Password?
+            {/* Right Column: High-End Neon Glass Form Card */}
+            <div
+              style={{
+                background: "rgba(255, 255, 255, 0.98)",
+                borderRadius: "24px",
+                padding: "40px 36px",
+                boxShadow: "0 20px 50px rgba(0, 0, 0, 0.3)",
+                position: "relative"}}
+            >
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#059669", marginBottom: 6 }}>
+                  ECOMART ACCOUNT SIGN IN
+                </div>
+                <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 28, fontWeight: 800, margin: "0 0 6px 0", color: "#0f172a", letterSpacing: "-0.03em" }}>
+                  Sign In
+                </h2>
+                <p style={{ fontSize: 14, color: "#64748b", margin: 0 }}>
+                  Enter your credentials to access your EcoMart account
+                </p>
+              </div>
+
+              {/* Error Alert */}
+              {loginError && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    background: "#fef2f2",
+                    border: "1px solid #fca5a5",
+                    color: "#dc2626",
+                    padding: "12px 14px",
+                    borderRadius: "14px",
+                    marginBottom: 20,
+                    fontSize: 13.5,
+                    fontWeight: 600}}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                    <span>{loginError}</span>
+                  </div>
+
+                  {isUnverified && (
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={resendLoading}
+                      style={{
+                        alignSelf: "flex-start",
+                        background: "#dc2626",
+                        color: "#ffffff",
+                        border: "none",
+                        padding: "6px 14px",
+                        borderRadius: "8px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: resendLoading ? "not-allowed" : "pointer",
+                        marginTop: 4}}
+                    >
+                      {resendLoading ? "Sending Verification OTP..." : "Resend Verification OTP"}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} autoComplete="off">
+                {/* Email Field */}
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 8 }}>
+                    Email Address
+                  </label>
+                  <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                    <div style={{ position: "absolute", left: 14, color: "#10b981", display: "flex", pointerEvents: "none" }}>
+                      <User size={18} />
+                    </div>
+                    <input
+                      type="email"
+                      name="ecomart_user_email"
+                      placeholder="name@company.com"
+                      autoComplete="off"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      style={{
+                        width: "100%",
+                        height: 48,
+                        paddingLeft: 42,
+                        paddingRight: 16,
+                        fontSize: 14.5,
+                        borderRadius: "14px",
+                        border: errors.email ? "1.5px solid #ef4444" : "1.5px solid #cbd5e1",
+                        background: "#f8fafc",
+                        color: "#0f172a",
+                        outline: "none",
+                        fontFamily: "'Plus Jakarta Sans', sans-serif",
+                        transition: "all 0.2s ease"}}
+                      onFocus={(e) => (e.target.style.borderColor = "#10b981")}
+                      onBlur={(e) => (e.target.style.borderColor = errors.email ? "#ef4444" : "#cbd5e1")}
+                      required
+                    />
+                  </div>
+                  {errors.email && <div style={{ fontSize: 12, color: "#dc2626", marginTop: 4, fontWeight: 600 }}>{errors.email}</div>}
+                </div>
+
+                {/* Password Field */}
+                <div style={{ marginBottom: 22 }}>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 8 }}>
+                    Password
+                  </label>
+                  <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                    <div style={{ position: "absolute", left: 14, color: "#10b981", display: "flex", pointerEvents: "none" }}>
+                      <Lock size={18} />
+                    </div>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      name="ecomart_user_password"
+                      placeholder="••••••••••••"
+                      autoComplete="new-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      style={{
+                        width: "100%",
+                        height: 48,
+                        paddingLeft: 42,
+                        paddingRight: 46,
+                        fontSize: 14.5,
+                        borderRadius: "14px",
+                        border: errors.password ? "1.5px solid #ef4444" : "1.5px solid #cbd5e1",
+                        background: "#f8fafc",
+                        color: "#0f172a",
+                        outline: "none",
+                        fontFamily: "'Plus Jakarta Sans', sans-serif",
+                        transition: "all 0.2s ease"}}
+                      onFocus={(e) => (e.target.style.borderColor = "#10b981")}
+                      onBlur={(e) => (e.target.style.borderColor = errors.password ? "#ef4444" : "#cbd5e1")}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={togglePasswordVisibility}
+                      style={{
+                        position: "absolute",
+                        right: 12,
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "#64748b",
+                        display: "flex",
+                        padding: 6}}
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  {errors.password && <div style={{ fontSize: 12, color: "#dc2626", marginTop: 4, fontWeight: 600 }}>{errors.password}</div>}
+                </div>
+
+                {/* Remember & Forgot Row */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 26, fontSize: 13.5 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", color: "#475569", fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      style={{ accentColor: "#10b981", width: 17, height: 17, cursor: "pointer" }}
+                    />
+                    Remember me
+                  </label>
+                  <Link to="/forgot-password" style={{ color: "#059669", fontWeight: 700, textDecoration: "none" }}>
+                    Forgot Password?
+                  </Link>
+                </div>
+
+                {/* Submit CTA */}
+                <Button
+                  type="submit"
+                  variant="primary"
+                  full
+                  disabled={loading}
+                  style={{
+                    height: 50,
+                    borderRadius: "14px",
+                    fontWeight: 800,
+                    fontSize: 15.5,
+                    letterSpacing: "-0.01em",
+                    fontFamily: "'Plus Jakarta Sans', sans-serif",
+                    background: "linear-gradient(135deg, #10b981 0%, #047857 100%)",
+                    border: "none",
+                    color: "#ffffff",
+                    boxShadow: "0 8px 24px rgba(16, 185, 129, 0.4)",
+                    cursor: loading ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8}}
+                >
+                  {loading ? (
+                    "Signing in..."
+                  ) : (
+                    <>
+                      Sign In to EcoMart <ArrowRight size={18} />
+                    </>
+                  )}
+                </Button>
+              </form>
+
+              {/* Create Account Link */}
+              <div style={{ marginTop: 28, textAlign: "center", fontSize: 14, color: "#64748b" }}>
+                Don't have an account?{" "}
+                <Link to="/register" style={{ fontWeight: 800, color: "#059669", textDecoration: "none" }}>
+                  Create Free Account
                 </Link>
               </div>
-
-              {/* Submit CTA */}
-              <Button
-                type="submit"
-                variant="primary"
-                full
-                disabled={loading}
-                style={{ padding: "12px", fontWeight: 700 }}
-              >
-                {loading ? "Signing in..." : "Sign In"}
-              </Button>
-            </form>
-
-            {/* Register Redirect */}
-            <div style={{ marginTop: 24, textAlign: "center", fontSize: 13, color: "var(--text-soft)" }}>
-              Don't have an account?{" "}
-              <Link to="/register" style={{ fontWeight: 700, color: "var(--brand)", textDecoration: "underline" }}>
-                Create Free Account
-              </Link>
             </div>
           </div>
         </div>

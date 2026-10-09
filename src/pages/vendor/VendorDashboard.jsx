@@ -6,8 +6,7 @@ import {
   Card,
   Badge,
   Avatar,
-  EmptyState,
-} from "../../components/common/index.js";
+  EmptyState} from "../../components/common/index.js";
 import { OnboardingModal } from "../../components/common/OnboardingModal.jsx";
 import { BarChart } from "../../components/charts/BarChart.jsx";
 import { DonutChart } from "../../components/charts/DonutChart.jsx";
@@ -18,8 +17,7 @@ import {
   ClipboardList,
   AlertTriangle,
   Plus,
-  Check,
-} from "../../components/icons/Icons.jsx";
+  Check} from "../../components/icons/Icons.jsx";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
 import { useData } from "../../hooks/useData.js";
 import { useAuth } from "../../hooks/useAuth.js";
@@ -33,19 +31,18 @@ function VendorDashboardBase() {
   const { notifications } = useNotifications();
   const navigate = useNavigate();
 
-  const [onboardingOpen, setOnboardingOpen] = useState(false);
-
-  useEffect(() => {
+  const [onboardingOpen, setOnboardingOpen] = useState(() => {
     try {
       const shown = localStorage.getItem("fc_onboarding_done");
       if (!shown) {
-        setOnboardingOpen(true);
         localStorage.setItem("fc_onboarding_done", "true");
+        return true;
       }
     } catch {
       /* noop */
     }
-  }, []);
+    return false;
+  });
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -98,8 +95,7 @@ function VendorDashboardBase() {
     myOrders.forEach((o) => {
       if (!o.createdAt) return;
       const month = new Date(o.createdAt).toLocaleDateString("en-IN", {
-        month: "short",
-      });
+        month: "short"});
       buckets[month] = (buckets[month] || 0) + o.amount;
     });
     return Object.entries(buckets).map(([label, value]) => ({ label, value }));
@@ -124,10 +120,8 @@ function VendorDashboardBase() {
       acc.push({
         label: new Date(o.createdAt).toLocaleDateString("en-IN", {
           day: "2-digit",
-          month: "short",
-        }),
-        value: running,
-      });
+          month: "short"}),
+        value: running});
       return acc;
     }, []);
   }, [myOrders]);
@@ -173,22 +167,19 @@ function VendorDashboardBase() {
             productId: p.id,
             productName: p.name,
             status: "high",
-            text: `Listed ₹${p.price} (${percentage}% higher than market avg ₹${avg.toFixed(1)}). B2B purchase volume might slow down. Consider adding wholesale pricing tiers.`,
-          };
+            text: `Listed ₹${p.price} (${percentage}% higher than market avg ₹${avg.toFixed(1)}). B2B purchase volume might slow down. Consider adding wholesale pricing tiers.`};
         } else if (difference < -5) {
           return {
             productId: p.id,
             productName: p.name,
             status: "low",
-            text: `Listed ₹${p.price} (${percentage}% lower than market avg ₹${avg.toFixed(1)}). You have margin headroom to raise prices or enforce a higher MOQ.`,
-          };
+            text: `Listed ₹${p.price} (${percentage}% lower than market avg ₹${avg.toFixed(1)}). You have margin headroom to raise prices or enforce a higher MOQ.`};
         } else {
           return {
             productId: p.id,
             productName: p.name,
             status: "optimal",
-            text: `Listed ₹${p.price} is perfectly aligned with category market average (₹${avg.toFixed(1)}).`,
-          };
+            text: `Listed ₹${p.price} is perfectly aligned with category market average (₹${avg.toFixed(1)}).`};
         }
       })
       .filter(Boolean)
@@ -233,8 +224,7 @@ function VendorDashboardBase() {
           marginBottom: "24px",
           boxShadow: "var(--shadow-md)",
           position: "relative",
-          overflow: "hidden",
-        }}
+          overflow: "hidden"}}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
           <div>
@@ -328,8 +318,7 @@ function VendorDashboardBase() {
                   background: "var(--danger-light)",
                   padding: "12px 14px",
                   borderRadius: "var(--radius-sm)",
-                  marginBottom: 10,
-                }}
+                  marginBottom: 10}}
               >
                 <strong style={{ color: "var(--danger)", fontSize: "12.5px" }}>
                   ⚠️ Low Inventory: {p.name}
@@ -359,8 +348,7 @@ function VendorDashboardBase() {
                       : "var(--brand-light)",
                   padding: "12px 14px",
                   borderRadius: "var(--radius-sm)",
-                  marginBottom: 10,
-                }}
+                  marginBottom: 10}}
               >
                 <strong
                   style={{
@@ -370,8 +358,7 @@ function VendorDashboardBase() {
                         ? "var(--danger)"
                         : advice.status === "low"
                         ? "var(--accent)"
-                        : "var(--brand)",
-                  }}
+                        : "var(--brand)"}}
                 >
                   💡 Pricing Guide: {advice.productName}
                 </strong>

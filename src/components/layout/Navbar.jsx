@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Sprout, Bell, Cart, Moon, Sun, Menu, XCircle } from "../icons/Icons.jsx";
+import { Sprout, Bell, Cart, Moon, Sun, Menu} from "../icons/Icons.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
 import { useTheme } from "../../hooks/useTheme.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
@@ -94,7 +94,7 @@ function NavbarBase({ onOpenMobileSidebar }) {
             to={item.path}
             className={({ isActive }) => `fc-navlink ${isActive ? "active" : ""}`}
           >
-            {t(item.key) || item.defaultLabel}
+            {t(item.key, item.defaultLabel) || item.defaultLabel}
           </NavLink>
         ))}
       </nav>
@@ -112,18 +112,26 @@ function NavbarBase({ onOpenMobileSidebar }) {
             onClick={() => setLangOpen((s) => !s)}
             aria-label="Change language"
             aria-expanded={langOpen}
+            style={{
+              fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif",
+              fontWeight: 700,
+              fontSize: "13.5px",
+              padding: "7px 14px",
+              borderRadius: "10px",
+              letterSpacing: "-0.01em"}}
           >
-            <span style={{ fontSize: "14px" }}>🌐</span>
+            <span>🌐</span>
             <span>{LANGUAGES.find((l) => l.code === lang)?.label || "English"}</span>
-            <span style={{ fontSize: "10px" }}>▼</span>
+            <span style={{ fontSize: "10px", opacity: 0.8 }}>▼</span>
           </button>
           {langOpen && (
-            <div className="fc-dropdown fc-lang-menu fc-slide-down" style={{ padding: "4px 0" }}>
+            <div className="fc-dropdown fc-lang-menu fc-slide-down" style={{ padding: "6px 0", borderRadius: "12px", fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif" }}>
               {LANGUAGES.map((l) => (
                 <button
                   key={l.code}
                   className={`fc-lang-item ${lang === l.code ? "active" : ""}`}
                   onClick={() => { setLang(l.code); setLangOpen(false); }}
+                  style={{ fontFamily: "'Plus Jakarta Sans', 'Inter', sans-serif", fontWeight: lang === l.code ? 700 : 500 }}
                 >
                   <span style={{ width: "16px", color: "var(--brand)", fontWeight: "bold" }}>
                     {lang === l.code ? "✓" : ""}

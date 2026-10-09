@@ -18,7 +18,7 @@ import { CATEGORIES } from "../../utils/constants.js";
 
 function MyProductsBase({ openAdd }) {
   const { t } = useLanguage();
-  const { vendorProfile } = useAuth();
+  const { user, vendorProfile } = useAuth();
   const { products, addProduct, updateProduct, deleteProduct } = useData();
   const { notifySuccess } = useNotifications();
   const location = useLocation();
@@ -41,8 +41,11 @@ function MyProductsBase({ openAdd }) {
   /* Auto-open the Add modal when navigated here with openAdd prop or state */
   useEffect(() => {
     if (openAdd || location.state?.openAdd) {
-      setEditing(null);
-      setModalOpen(true);
+      const timer = setTimeout(() => {
+        setEditing(null);
+        setModalOpen(true);
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [openAdd, location.state]);
 
@@ -69,11 +72,11 @@ function MyProductsBase({ openAdd }) {
       updateProduct(editing.id, form);
       notifySuccess(t("productUpdated"));
     } else {
-      addProduct({ ...form, vendorId: vendorProfile.id });
+      addProduct({ ...form, vendorId: currentVendorId });
       notifySuccess(t("productAdded"));
     }
     setModalOpen(false);
-  }, [editing, updateProduct, addProduct, notifySuccess, t, vendorProfile.id]);
+  }, [editing, updateProduct, addProduct, notifySuccess, t, currentVendorId]);
 
   const confirmDelete = useCallback(() => {
     if (deleting) {

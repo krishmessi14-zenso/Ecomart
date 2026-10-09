@@ -1,8 +1,9 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useEffect, useMemo, useCallback, useReducer } from "react";
 import { uid } from "../utils/formatters.js";
 import { useAuth } from "../hooks/useAuth.js";
 import { ToastStack } from "../components/common/Toast.jsx";
+
+import { apiFetch } from "../services/api";
 
 export const NotificationContext = createContext(null);
 
@@ -44,7 +45,7 @@ export function NotificationProvider({ children }) {
       return;
     }
     try {
-      const res = await fetch(`/api/notifications?userId=${user.id}`);
+      const res = await apiFetch(`/api/notifications?userId=${user.id}`);
       if (res.ok) {
         const data = await res.json();
         dispatch({ type: "SET_NOTIFICATIONS", payload: data });
@@ -62,9 +63,8 @@ export function NotificationProvider({ children }) {
     async (text, type = "system") => {
       if (!user) return;
       try {
-        const res = await fetch("/api/notifications", {
+        const res = await apiFetch("/api/notifications", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ userId: user.id, text, type }),
         });
         if (res.ok) {
@@ -81,9 +81,8 @@ export function NotificationProvider({ children }) {
   const markAllRead = useCallback(async () => {
     if (!user) return;
     try {
-      const res = await fetch("/api/notifications/read-all", {
+      const res = await apiFetch("/api/notifications/read-all", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id }),
       });
       if (res.ok) {

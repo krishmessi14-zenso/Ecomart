@@ -8,6 +8,7 @@ import {
   Tabs,
   Skeleton,
   EmptyState,
+  EcoScoreGauge,
 } from "../../components/common/index.js";
 import { ProductCard } from "../../components/product/ProductCard.jsx";
 import {
@@ -38,6 +39,8 @@ function ProductDetailsBase() {
   const [loading, setLoading] = useState(true);
   const [vendors, setVendors] = useState([]);
   const [selectedImage, setSelectedImage] = useState(0);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const [quantity, setQuantity] = useState(10);
   const [activeTab, setActiveTab] = useState("specs");
 
@@ -47,6 +50,10 @@ function ProductDetailsBase() {
   const [newComment, setNewComment] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
   const [addedFlash, setAddedFlash] = useState(false);
+
+  // AI Product Voice Explanation State
+  const [explainingAi, setExplainingAi] = useState(false);
+  const [aiExplanationText, setAiExplanationText] = useState("");
 
   // Fetch vendors list
   const fetchVendors = useCallback(async () => {
@@ -73,10 +80,24 @@ function ProductDetailsBase() {
     return products.find((p) => String(p.id) === String(productId));
   }, [products, productId]);
 
-  // Set initial quantity to product MOQ
+  // Vendor lookup
+  const vendor = useMemo(() => {
+    if (!product) return null;
+    return (
+      vendors.find((f) => f.id === product.vendorId) || {
+        name: "EcoMart Vendor",
+        storeName: "Unavailable Store",
+        region: product.region || "",
+        verificationStatus: "Pending",
+        rating: 0,
+      }
+    );
+  }, [vendors, product]);
+
+  // Set initial quantity to product MOQ (defaulting to 1)
   useEffect(() => {
     if (product) {
-      setQuantity(product.moq || 10);
+      setQuantity(product.moq || 1);
     }
   }, [product]);
 
@@ -99,28 +120,149 @@ function ProductDetailsBase() {
     }
   }, [product, fetchReviews]);
 
-  // Vendor lookup
-  const vendor = useMemo(() => {
-    if (!product) return null;
-    return (
-      vendors.find((f) => f.id === product.vendorId) || {
-        name: "EcoMart Vendor",
-        storeName: "Unavailable Store",
-        region: product.region || "",
-        verificationStatus: "Pending",
-        rating: 0,
-      }
-    );
-  }, [vendors, product]);
-
-  // Gallery images array
-  const galleryImages = useMemo(() => {
+  // Gallery items array with color and multi-image support
+  const galleryItems = useMemo(() => {
     if (!product) return [];
     const fallback = getProductImage(product);
-    if (product.imageUrl) {
-      return [product.imageUrl, fallback];
+    let list = [];
+    if (product.images) {
+      try {
+        const parsed = typeof product.images === "string" ? JSON.parse(product.images) : product.images;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          list = parsed
+            .map((item) =>
+              typeof item === "object" && item !== null && item.imageUrl
+                ? { color: item.color || null, colorHex: item.colorHex || null, imageUrl: item.imageUrl }
+                : { color: null, colorHex: null, imageUrl: typeof item === "string" ? item : "" }
+            )
+            .filter((item) => item.imageUrl && item.imageUrl.trim() !== "");
+        }
+      } catch {
+        if (typeof product.images === "string") {
+          list = product.images
+            .split(",")
+            .map((url) => url.trim())
+            .filter(Boolean)
+            .map((url) => ({ color: null, colorHex: null, imageUrl: url }));
+        }
+      }
     }
-    return [fallback];
+    if (list.length === 0 && product.imageUrl && product.imageUrl.trim() !== "") {
+      list = [{ color: null, colorHex: null, imageUrl: product.imageUrl }];
+    }
+
+    // Default multi-image fallbacks for Bamboo Water Bottle if only 1 image provided
+    if ((String(product.id) === "p_sample_bamboo_bottle" || product.name?.toLowerCase().includes("bamboo water bottle")) && list.length <= 1) {
+      list = [
+        { color: "Natural Bamboo", colorHex: "#d4a373", imageUrl: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=1000" },
+        { color: "Stainless Steel Interior", colorHex: "#94a3b8", imageUrl: "https://images.unsplash.com/photo-1523362628745-0c100150b504?w=1000" },
+        { color: "Eco Matte Finish", colorHex: "#334155", imageUrl: "https://images.unsplash.com/photo-1589365278144-c9e705f843ba?w=1000" }
+      ];
+    }
+
+    if (list.length === 0) {
+      list = [{ color: null, colorHex: null, imageUrl: fallback }];
+    }
+    return list;
+  }, [product]);
+
+  // Keyboard navigation for Lightbox
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!isLightboxOpen) return;
+      if (e.key === "Escape") setIsLightboxOpen(false);
+      if (e.key === "ArrowLeft") {
+        setLightboxIndex((prev) => (prev > 0 ? prev - 1 : galleryItems.length - 1));
+      }
+      if (e.key === "ArrowRight") {
+        setLightboxIndex((prev) => (prev < galleryItems.length - 1 ? prev + 1 : 0));
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isLightboxOpen, galleryItems]);
+
+  // Dynamic Product Key Features calculation
+  const productFeatures = useMemo(() => {
+    if (!product) return [];
+
+    if (product.features) {
+      try {
+        const parsed = typeof product.features === "string" ? JSON.parse(product.features) : product.features;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((f) => (typeof f === "string" ? { icon: "🌱", title: f, description: "" } : f));
+        }
+      } catch (e) {
+        console.error("Failed to parse product.features", e);
+      }
+    }
+
+    // Custom features for Water Bottle
+    if (
+      String(product.id) === "p_sample_bamboo_bottle" ||
+      product.name?.toLowerCase().includes("water bottle") ||
+      product.name?.toLowerCase().includes("bamboo bottle")
+    ) {
+      return [
+        {
+          icon: "🌡️",
+          title: "12-Hour Thermal Insulation",
+          description: "Double-walled vacuum interior keeps beverages ice-cold up to 24h or hot up to 12h.",
+        },
+        {
+          icon: "🌿",
+          title: "100% Organic Bamboo Casing",
+          description: "Handcrafted natural bamboo outer layer with smooth protective eco seal.",
+        },
+        {
+          icon: "🛡️",
+          title: "Food-Grade 304 Stainless Steel",
+          description: "100% BPA-free, toxin-free interior that leaves zero metallic aftertaste.",
+        },
+        {
+          icon: "💧",
+          title: "Leak-Proof Precision Lid",
+          description: "Ergonomic cap with silicone sealing ring ensures 100% spill-proof travel.",
+        },
+        {
+          icon: "📦",
+          title: "Zero-Plastic Packaging",
+          description: "Shipped in 100% recyclable, plastic-free biodegradable corrugated packaging.",
+        },
+      ];
+    }
+
+    // Fallback features derived from product properties
+    const list = [];
+    if (product.organic === 1) {
+      list.push({
+        icon: "🌿",
+        title: "Certified Sustainable",
+        description: "Screened and certified for eco-friendly material origin and low carbon footprint.",
+      });
+    }
+    if (product.grade) {
+      list.push({
+        icon: "⭐",
+        title: `Grade ${product.grade} Quality Standard`,
+        description: "Screened for high structural integrity, uniform finish, and long lifecycle.",
+      });
+    }
+    if (product.materialType) {
+      list.push({
+        icon: "🔬",
+        title: `${product.materialType.replace("_", " ").toUpperCase()} Composition`,
+        description: `Manufactured using eco-friendly ${product.materialType} material.`,
+      });
+    }
+    if (product.recyclability) {
+      list.push({
+        icon: "♻️",
+        title: `${product.recyclability}% Recyclable`,
+        description: "Designed for circular usage lifecycle and hassle-free material recycling.",
+      });
+    }
+    return list;
   }, [product]);
 
   // Freshness calculation
@@ -149,6 +291,24 @@ function ProductDetailsBase() {
       return [];
     }
   }, [product?.tierPrices]);
+
+  // Calculate active tier price based on selected quantity
+  const activeTierPrice = useMemo(() => {
+    if (!product) return 0;
+    if (!tierEntries.length) return product.price || 0;
+    let applicable = product.price;
+    for (const [qtyStr, priceVal] of tierEntries) {
+      if (quantity >= Number(qtyStr)) {
+        applicable = Number(priceVal);
+      }
+    }
+    return applicable;
+  }, [product, tierEntries, quantity]);
+
+  const activeTierSavings = useMemo(() => {
+    if (!product || !product.price || activeTierPrice >= product.price) return 0;
+    return Math.round(((product.price - activeTierPrice) / product.price) * 100);
+  }, [product, activeTierPrice]);
 
   // Handlers
   const handleAddToCart = () => {
@@ -207,6 +367,31 @@ function ProductDetailsBase() {
     }
   };
 
+  const handleExplainProduct = async () => {
+    if (!product) return;
+    setExplainingAi(true);
+    try {
+      const res = await fetch("/api/ai/product-explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: product.id, language: "en-IN" })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAiExplanationText(data.explanation);
+        if (window.speechSynthesis && data.explanation) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(data.explanation.replace(/[*#_`]/g, ""));
+          window.speechSynthesis.speak(utterance);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching product explanation:", err);
+    } finally {
+      setExplainingAi(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="fc-page-transition" style={{ padding: "20px 0" }}>
@@ -241,7 +426,7 @@ function ProductDetailsBase() {
     );
   }
 
-  const mainImg = galleryImages[selectedImage] || galleryImages[0];
+  const mainImg = galleryItems[selectedImage]?.imageUrl || galleryItems[0]?.imageUrl || getProductImage(product);
   const isWishlisted = wishlist.includes(product.id);
 
   return (
@@ -284,15 +469,25 @@ function ProductDetailsBase() {
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow-md)",
               marginBottom: 14,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
+            onClick={() => {
+              setLightboxIndex(selectedImage);
+              setIsLightboxOpen(true);
+            }}
+            title="Click to view full screen uncropped image"
           >
             <img
               src={mainImg}
               alt={product.name}
               style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
+                maxWidth: "100%",
+                maxHeight: "100%",
+                objectFit: "contain",
+                padding: "16px",
                 transition: "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
               }}
               className="fc-product-thumb-img"
@@ -303,7 +498,7 @@ function ProductDetailsBase() {
               style={{
                 position: "absolute",
                 inset: 0,
-                background: "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.4) 100%)",
+                background: "linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.25) 100%)",
                 pointerEvents: "none",
               }}
             />
@@ -320,15 +515,92 @@ function ProductDetailsBase() {
                 Grade {product.grade}
               </span>
             </div>
+
+            {/* Image Count Badge */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: 12,
+                right: 12,
+                background: "rgba(0,0,0,0.7)",
+                color: "#fff",
+                padding: "6px 12px",
+                borderRadius: "20px",
+                fontSize: "11.5px",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                backdropFilter: "blur(4px)",
+                zIndex: 2,
+              }}
+            >
+              🔍 {selectedImage + 1}/{galleryItems.length}
+            </div>
           </div>
 
+          {/* Color Options Swatches */}
+          {galleryItems.some((item) => item.color) && (
+            <div style={{ marginBottom: 16, background: "var(--bg-soft)", padding: "12px 14px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>
+                🎨 Option / Variant: <strong style={{ color: "var(--brand)" }}>{galleryItems[selectedImage]?.color || "Default"}</strong>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {galleryItems.map((item, idx) => (
+                  item.color ? (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setSelectedImage(idx);
+                        setLightboxIndex(idx);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "6px 12px",
+                        borderRadius: "20px",
+                        border: selectedImage === idx ? "2px solid var(--brand)" : "1px solid var(--border)",
+                        background: selectedImage === idx ? "var(--brand-light)" : "var(--surface)",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: selectedImage === idx ? 700 : 500,
+                        color: "var(--text)",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {item.colorHex && (
+                        <span
+                          style={{
+                            width: 14,
+                            height: 14,
+                            borderRadius: "50%",
+                            backgroundColor: item.colorHex,
+                            border: "1px solid rgba(0,0,0,0.15)",
+                            display: "inline-block",
+                          }}
+                        />
+                      )}
+                      <span>{item.color}</span>
+                    </button>
+                  ) : null
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Thumbnail Navigation Strip */}
-          {galleryImages.length > 1 && (
-            <div style={{ display: "flex", gap: 10 }}>
-              {galleryImages.map((img, idx) => (
+          {galleryItems.length > 1 && (
+            <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+              {galleryItems.map((item, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setSelectedImage(idx)}
+                  type="button"
+                  onClick={() => {
+                    setSelectedImage(idx);
+                    setLightboxIndex(idx);
+                  }}
                   style={{
                     width: 72,
                     height: 72,
@@ -336,15 +608,99 @@ function ProductDetailsBase() {
                     overflow: "hidden",
                     border: selectedImage === idx ? "2px solid var(--brand)" : "1px solid var(--border)",
                     cursor: "pointer",
-                    padding: 0,
-                    background: "none",
+                    padding: "4px",
+                    background: "var(--bg-soft)",
                     opacity: selectedImage === idx ? 1 : 0.7,
                     transition: "all 0.15s ease",
                   }}
                 >
-                  <img src={img} alt={`Thumbnail ${idx + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <img src={item.imageUrl} alt={item.color || `Thumbnail ${idx + 1}`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* 🌱 Sustainability & Impact Metrics Gauge Panel */}
+          <div
+            style={{
+              padding: "18px",
+              borderRadius: "var(--radius-lg)",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow-sm)",
+              marginBottom: 20,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h4 style={{ fontSize: 13.5, fontWeight: 800, margin: 0, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
+                🌱 Sustainability & Impact Metrics
+              </h4>
+              <Badge variant="organic">Verified Green Listing</Badge>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: 16, alignItems: "center" }}>
+              <EcoScoreGauge score={product.ecoScore || 94} size={105} strokeWidth={9} />
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ background: "var(--bg-soft)", padding: "8px 10px", borderRadius: 8 }}>
+                  <span className="fc-soft" style={{ fontSize: 10, display: "block" }}>☁️ CO₂ SAVED</span>
+                  <strong style={{ fontSize: 13, color: "var(--brand)" }}>{product.co2SavedKg || 4.5} kg</strong>
+                </div>
+                <div style={{ background: "var(--bg-soft)", padding: "8px 10px", borderRadius: 8 }}>
+                  <span className="fc-soft" style={{ fontSize: 10, display: "block" }}>🥤 PLASTIC SAVED</span>
+                  <strong style={{ fontSize: 13, color: "var(--brand)" }}>{product.plasticSavedKg || 1.2} kg</strong>
+                </div>
+                <div style={{ background: "var(--bg-soft)", padding: "8px 10px", borderRadius: 8 }}>
+                  <span className="fc-soft" style={{ fontSize: 10, display: "block" }}>💧 WATER SAVED</span>
+                  <strong style={{ fontSize: 13, color: "var(--brand)" }}>{product.waterSavedLiters || 25} L</strong>
+                </div>
+                <div style={{ background: "var(--bg-soft)", padding: "8px 10px", borderRadius: 8 }}>
+                  <span className="fc-soft" style={{ fontSize: 10, display: "block" }}>🌳 TREES EQUIV.</span>
+                  <strong style={{ fontSize: 13, color: "var(--brand)" }}>{product.treesEquivalent || 0.3}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ✨ Product Key Features Section (Side Panel) */}
+          {productFeatures.length > 0 && (
+            <div
+              style={{
+                padding: "18px",
+                borderRadius: "var(--radius-lg)",
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                boxShadow: "var(--shadow-sm)",
+              }}
+            >
+              <h4 style={{ fontSize: 14, fontWeight: 800, margin: "0 0 14px 0", color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>
+                ✨ Key Product Features
+              </h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {productFeatures.map((feat, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: "flex",
+                      gap: 12,
+                      alignItems: "flex-start",
+                      background: "var(--bg-soft)",
+                      padding: "10px 12px",
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                  >
+                    <span style={{ fontSize: 18, lineHeight: 1 }}>{feat.icon || "✓"}</span>
+                    <div>
+                      <strong style={{ fontSize: 13, color: "var(--text)", display: "block", marginBottom: 2 }}>{feat.title}</strong>
+                      {feat.description && (
+                        <span className="fc-soft" style={{ fontSize: 11.5, lineHeight: 1.4, display: "block" }}>
+                          {feat.description}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -387,11 +743,16 @@ function ProductDetailsBase() {
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 2 }}>
               <strong style={{ fontFamily: "var(--font-heading)", fontSize: "28px", color: "var(--text)" }}>
-                {formatCurrency(product.price)}
+                {formatCurrency(activeTierPrice || product.price)}
               </strong>
               <span className="fc-soft" style={{ fontSize: "14px" }}>
                 /{product.unit}
               </span>
+              {activeTierSavings > 0 && (
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#059669", background: "#ecfdf5", padding: "2px 8px", borderRadius: 4 }}>
+                  {activeTierSavings}% OFF
+                </span>
+              )}
             </div>
           </div>
 
@@ -403,20 +764,26 @@ function ProductDetailsBase() {
             </div>
             <div>
               <span className="fc-soft" style={{ fontSize: 11, display: "block" }}>MINIMUM ORDER (MOQ)</span>
-              <strong style={{ fontSize: 13.5 }}>{product.moq || 10} {product.unit}</strong>
+              <strong style={{ fontSize: 13.5 }}>{product.moq || 1} {product.unit}</strong>
             </div>
           </div>
 
-          {/* Quantity Selector */}
+          {/* Quantity Selector & Interactive Range Slider */}
           <div style={{ marginBottom: 22 }}>
-            <label style={{ fontSize: "12px", fontWeight: 700, display: "block", marginBottom: 8, color: "var(--text)" }}>
-              Order Quantity ({product.unit}):
-            </label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--text)" }}>
+                Order Quantity ({product.unit}):
+              </label>
+              <span className="fc-soft" style={{ fontSize: "11px" }}>
+                Subtotal: <strong>{formatCurrency((activeTierPrice || product.price) * quantity)}</strong>
+              </span>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <button
                 className="fc-btn fc-btn-outline fc-btn-sm"
-                onClick={() => setQuantity((q) => Math.max(product.moq || 10, q - (product.moq || 5)))}
-                disabled={quantity <= (product.moq || 10)}
+                onClick={() => setQuantity((q) => Math.max(product.moq || 1, q - 1))}
+                disabled={quantity <= (product.moq || 1)}
                 style={{ width: 36, height: 36, padding: 0, fontWeight: 800 }}
               >
                 -
@@ -424,10 +791,11 @@ function ProductDetailsBase() {
               <input
                 type="number"
                 value={quantity}
-                onChange={(e) => setQuantity(Math.max(product.moq || 10, Number(e.target.value)))}
-                min={product.moq || 10}
+                onChange={(e) => setQuantity(Math.max(product.moq || 1, Math.min(product.stock || 9999, Number(e.target.value))))}
+                min={product.moq || 1}
+                max={product.stock}
                 style={{
-                  width: 90,
+                  width: 80,
                   height: 36,
                   textAlign: "center",
                   fontWeight: 700,
@@ -440,15 +808,42 @@ function ProductDetailsBase() {
               />
               <button
                 className="fc-btn fc-btn-outline fc-btn-sm"
-                onClick={() => setQuantity((q) => q + (product.moq || 5))}
+                onClick={() => setQuantity((q) => Math.min(product.stock || 9999, q + 1))}
+                disabled={quantity >= (product.stock || 9999)}
                 style={{ width: 36, height: 36, padding: 0, fontWeight: 800 }}
               >
                 +
               </button>
-              <span className="fc-soft" style={{ fontSize: 12, marginLeft: 4 }}>
-                Subtotal: <strong>{formatCurrency(product.price * quantity)}</strong>
-              </span>
+              <input
+                type="range"
+                min={product.moq || 1}
+                max={Math.min(200, product.stock || 200)}
+                value={quantity}
+                onChange={(e) => setQuantity(Number(e.target.value))}
+                style={{ flex: 1, accentColor: "var(--brand)", cursor: "pointer", height: 6 }}
+              />
             </div>
+
+            {/* Active Tier Discount Banner */}
+            {activeTierSavings > 0 && (
+              <div
+                style={{
+                  padding: "8px 12px",
+                  background: "#ecfdf5",
+                  border: "1px solid #6ee7b7",
+                  borderRadius: "6px",
+                  fontSize: 11,
+                  color: "#065f46",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>🎉 Bulk Tier Unlocked!</span>
+                <span>Saving {activeTierSavings}% OFF ({formatCurrency(activeTierPrice)}/{product.unit})</span>
+              </div>
+            )}
           </div>
 
           {/* Primary Action Buttons */}
@@ -464,12 +859,71 @@ function ProductDetailsBase() {
             <Button variant="accent" full onClick={handleBuyNow} style={{ padding: "12px", fontWeight: 700 }}>
               Buy Now (Proceed to Checkout) →
             </Button>
+
+            {/* AI Product Voice Explainer (Part 10 Feature 1) */}
+            <div
+              style={{
+                marginTop: "12px",
+                padding: "14px",
+                background: "var(--brand-light)",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--brand-border)",
+                fontSize: "12px"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                <span style={{ fontWeight: 800, color: "var(--brand-dark)", display: "flex", alignItems: "center", gap: "6px" }}>
+                  🤖 EcoMart AI Voice Explainer
+                </span>
+                <button
+                  type="button"
+                  onClick={handleExplainProduct}
+                  disabled={explainingAi}
+                  style={{
+                    padding: "5px 12px",
+                    background: "var(--brand)",
+                    color: "#ffffff",
+                    borderRadius: "var(--radius-sm)",
+                    fontWeight: 700,
+                    border: "none",
+                    cursor: explainingAi ? "default" : "pointer",
+                    fontSize: "11px",
+                    boxShadow: "var(--shadow-xs)"
+                  }}
+                >
+                  {explainingAi ? "Generating..." : "🔊 Explain Product"}
+                </button>
+              </div>
+
+              {aiExplanationText ? (
+                <p
+                  style={{
+                    margin: 0,
+                    color: "var(--text)",
+                    lineHeight: 1.5,
+                    fontWeight: 500,
+                    background: "var(--surface)",
+                    padding: "10px 12px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--border)"
+                  }}
+                >
+                  {aiExplanationText}
+                </p>
+              ) : (
+                <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "11px" }}>
+                  Click to hear a voice-guided summary of this product's EcoScore, materials, and environmental benefits.
+                </p>
+              )}
+            </div>
           </div>
         </Card>
       </div>
 
+
+
       {/* BELOW SECTIONS: Tabs for Specs, Bulk Tiers, Grower Info, Reviews */}
-      <Card style={{ padding: "26px", marginBottom: "36px" }}>
+      <Card style={{ padding: "26px", marginBottom: "36px", marginTop: "28px" }}>
         <Tabs
           tabs={[
             { id: "specs", label: "Overview & Specifications" },
@@ -490,6 +944,41 @@ function ProductDetailsBase() {
               {product.description || "A verified sustainable product, screened for material quality, packaging, and environmental impact before approval."}
             </p>
 
+            {/* Product Key Features Grid */}
+            {productFeatures.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <h4 style={{ fontSize: "14px", fontWeight: 700, marginBottom: 12, color: "var(--text)" }}>
+                  ✨ Product Features & Highlights
+                </h4>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+                  {productFeatures.map((feat, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        background: "var(--bg-soft)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-sm)",
+                        padding: "12px 14px",
+                        display: "flex",
+                        gap: 12,
+                        alignItems: "flex-start",
+                      }}
+                    >
+                      <span style={{ fontSize: 20, lineHeight: 1 }}>{feat.icon || "✓"}</span>
+                      <div>
+                        <strong style={{ fontSize: 13, color: "var(--text)", display: "block", marginBottom: 2 }}>{feat.title}</strong>
+                        {feat.description && (
+                          <span className="fc-soft" style={{ fontSize: 12, lineHeight: 1.45, display: "block" }}>
+                            {feat.description}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <h4 style={{ fontSize: "14px", fontWeight: 700, marginBottom: 12 }}>Product Specifications</h4>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px" }}>
               <div style={{ background: "var(--bg-soft)", padding: "10px 14px", borderRadius: "var(--radius-sm)" }}>
@@ -501,7 +990,7 @@ function ProductDetailsBase() {
                 <strong>Grade {product.grade}</strong>
               </div>
               <div style={{ background: "var(--bg-soft)", padding: "10px 14px", borderRadius: "var(--radius-sm)" }}>
-                <span className="fc-soft" style={{ display: "block", fontSize: 11 }}>LISTED DATE</span>
+                <span className="fc-soft" style={{ display: "block", fontSize: 11 }}>MANUFACTURED DATE</span>
                 <strong>{product.harvestDate ? formatDate(product.harvestDate) : "—"}</strong>
               </div>
               <div style={{ background: "var(--bg-soft)", padding: "10px 14px", borderRadius: "var(--radius-sm)" }}>
@@ -710,6 +1199,194 @@ function ProductDetailsBase() {
           </Button>
         </div>
       </div>
+
+      {/* 🔍 Full-Screen Image Lightbox Modal */}
+      {isLightboxOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            backgroundColor: "rgba(0, 0, 0, 0.92)",
+            backdropFilter: "blur(10px)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            animation: "fadeIn 0.2s ease-out",
+          }}
+          onClick={() => setIsLightboxOpen(false)}
+        >
+          {/* Header Bar */}
+          <div
+            style={{
+              position: "absolute",
+              top: 20,
+              left: 24,
+              right: 24,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              color: "#fff",
+              zIndex: 10000,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff" }}>{product.name}</h3>
+              <span style={{ fontSize: 13, opacity: 0.85 }}>
+                {galleryItems[lightboxIndex]?.color ? `Variant: ${galleryItems[lightboxIndex].color} • ` : ""}
+                Image {lightboxIndex + 1} of {galleryItems.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsLightboxOpen(false)}
+              style={{
+                background: "rgba(255, 255, 255, 0.2)",
+                border: "none",
+                color: "#fff",
+                width: 42,
+                height: 42,
+                borderRadius: "50%",
+                fontSize: 22,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "background 0.2s",
+              }}
+              title="Close Full Screen (Esc)"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Main Uncropped Image View */}
+          <div
+            style={{
+              position: "relative",
+              maxWidth: "90vw",
+              maxHeight: "78vh",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={galleryItems[lightboxIndex]?.imageUrl || mainImg}
+              alt={product.name}
+              style={{
+                maxWidth: "90vw",
+                maxHeight: "75vh",
+                objectFit: "contain",
+                borderRadius: "12px",
+                boxShadow: "0 20px 50px rgba(0,0,0,0.6)",
+              }}
+            />
+
+            {/* Prev / Next Nav Buttons */}
+            {galleryItems.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setLightboxIndex((prev) => (prev > 0 ? prev - 1 : galleryItems.length - 1))}
+                  style={{
+                    position: "absolute",
+                    left: -24,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "rgba(255, 255, 255, 0.25)",
+                    color: "#fff",
+                    border: "none",
+                    width: 52,
+                    height: 52,
+                    borderRadius: "50%",
+                    fontSize: 28,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backdropFilter: "blur(4px)",
+                  }}
+                  title="Previous Image"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLightboxIndex((prev) => (prev < galleryItems.length - 1 ? prev + 1 : 0))}
+                  style={{
+                    position: "absolute",
+                    right: -24,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "rgba(255, 255, 255, 0.25)",
+                    color: "#fff",
+                    border: "none",
+                    width: 52,
+                    height: 52,
+                    borderRadius: "50%",
+                    fontSize: 28,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backdropFilter: "blur(4px)",
+                  }}
+                  title="Next Image"
+                >
+                  ›
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Bottom Thumbnail Strip inside Lightbox */}
+          {galleryItems.length > 1 && (
+            <div
+              style={{
+                position: "absolute",
+                bottom: 24,
+                display: "flex",
+                gap: 12,
+                background: "rgba(0, 0, 0, 0.65)",
+                padding: "8px 16px",
+                borderRadius: "30px",
+                backdropFilter: "blur(6px)",
+                zIndex: 10000,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {galleryItems.map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setLightboxIndex(idx);
+                    setSelectedImage(idx);
+                  }}
+                  style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: "8px",
+                    overflow: "hidden",
+                    border: lightboxIndex === idx ? "2.5px solid #10b981" : "1px solid rgba(255,255,255,0.3)",
+                    opacity: lightboxIndex === idx ? 1 : 0.6,
+                    cursor: "pointer",
+                    padding: "2px",
+                    background: "rgba(255,255,255,0.1)",
+                  }}
+                >
+                  <img src={item.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -11,8 +11,7 @@ import {
   Skeleton,
   TableRowSkeleton,
   EmptyState,
-} from "../../components/common/index.js";
-import { BarChart } from "../../components/charts/BarChart.jsx";
+  Modal} from "../../components/common/index.js";
 import { DonutChart } from "../../components/charts/DonutChart.jsx";
 import { LineChart } from "../../components/charts/LineChart.jsx";
 import {
@@ -22,8 +21,7 @@ import {
   AlertTriangle,
   Search as SearchIcon,
   Check,
-  Star,
-} from "../../components/icons/Icons.jsx";
+  Star} from "../../components/icons/Icons.jsx";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
 import { useData } from "../../hooks/useData.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
@@ -84,13 +82,14 @@ function AdminDashboardBase() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Dynamic user profiles & reviews
   const [users, setUsers] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [deliveryAnalytics, setDeliveryAnalytics] = useState(null);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [inspectProduct, setInspectProduct] = useState(null);
 
   // Tab switcher
   const pathSegment = location.pathname.split("/").pop();
@@ -131,66 +130,93 @@ function AdminDashboardBase() {
     }
   }, []);
 
+  const fetchDeliveryAnalytics = useCallback(async () => {
+    try {
+      const res = await fetch("/api/delivery/analytics/overview");
+      if (res.ok) {
+        const data = await res.json();
+        setDeliveryAnalytics(data);
+      }
+    } catch (err) {
+      console.error("Failed to load delivery analytics:", err);
+    }
+  }, []);
+
   useEffect(() => {
-    fetchUsers();
-    fetchReviews();
-  }, [fetchUsers, fetchReviews]);
+    const timer = setTimeout(() => {
+      fetchUsers();
+      fetchReviews();
+      fetchDeliveryAnalytics();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchUsers, fetchReviews, fetchDeliveryAnalytics]);
+
+  // Safe array guarantees
+  const safeProducts = useMemo(() => (Array.isArray(products) ? products : []), [products]);
+  const safeOrders = useMemo(() => (Array.isArray(orders) ? orders : []), [orders]);
+  const safeUsers = useMemo(() => (Array.isArray(users) ? users : []), [users]);
+  const safeReviews = useMemo(() => (Array.isArray(reviews) ? reviews : []), [reviews]);
 
   // Derived statistics
   const vendorsList = useMemo(
-    () => users.filter((u) => u.role === "vendor"),
-    [users]
+    () => safeUsers.filter((u) => u && u.role === "vendor"),
+    [safeUsers]
   );
   const customersList = useMemo(
-    () => users.filter((u) => u.role === "customer"),
-    [users]
+    () => safeUsers.filter((u) => u && u.role === "customer"),
+    [safeUsers]
   );
 
   const pendingProducts = useMemo(
-    () => products.filter((p) => p.status === "pending"),
-    [products]
+    () => safeProducts.filter((p) => p && p.status === "pending"),
+    [safeProducts]
   );
 
   const totalVolume = useMemo(() => {
-    return orders
-      .filter((o) => o.status === "Delivered" || o.status === "Accepted")
-      .reduce((s, o) => s + o.amount, 0);
-  }, [orders]);
+    return safeOrders
+      .filter((o) => o && (o.status === "Delivered" || o.status === "Accepted" || o.status === "Confirmed" || o.status === "Paid"))
+      .reduce((s, o) => s + (Number(o?.amount) || Number(o?.totalAmount) || 0), 0);
+  }, [safeOrders]);
 
   // Chart data calculations
   const revenueTrend = useMemo(() => {
-    const sorted = [...orders].sort(
-      (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+    const sorted = [...safeOrders].sort(
+      (a, b) => new Date(a?.createdAt || 0) - new Date(b?.createdAt || 0)
     );
-    return sorted.reduce((acc, o) => {
-      const running = (acc.length ? acc[acc.length - 1].value : 0) + o.amount;
-      acc.push({
-        label: new Date(o.createdAt).toLocaleDateString("en-IN", {
-          day: "2-digit",
-          month: "short",
-        }),
-        value: running,
-      });
-      return acc;
-    }, []);
-  }, [orders]);
+    const dateMap = new Map();
+    let running = 0;
+    for (const o of sorted) {
+      const val = Number(o?.amount) || Number(o?.totalAmount) || 0;
+      running += val;
+      const dateLabel = o?.createdAt
+        ? new Date(o.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+        : "Initial";
+      dateMap.set(dateLabel, running);
+    }
+    return Array.from(dateMap.entries()).map(([label, value]) => ({ label, value }));
+  }, [safeOrders]);
 
   const categoryDist = useMemo(() => {
     const buckets = {};
-    products.forEach((p) => {
-      buckets[p.category] = (buckets[p.category] || 0) + 1;
+    safeProducts.forEach((p) => {
+      if (p) {
+        const cat = p.category || "General";
+        buckets[cat] = (buckets[cat] || 0) + 1;
+      }
     });
     return Object.entries(buckets).map(([label, value]) => ({ label, value }));
-  }, [products]);
+  }, [safeProducts]);
 
   const ordersByStatus = useMemo(() => {
     const buckets = { Pending: 0, Accepted: 0, Delivered: 0, Rejected: 0 };
-    orders.forEach((o) => {
-      const statusKey = o.status.replace(/\s+/g, "");
-      buckets[statusKey] = (buckets[statusKey] || 0) + 1;
+    safeOrders.forEach((o) => {
+      if (o && o.status) {
+        const statusKey = String(o.status).replace(/\s+/g, "");
+        buckets[statusKey] = (buckets[statusKey] || 0) + 1;
+      }
     });
     return Object.entries(buckets).map(([label, value]) => ({ label, value }));
-  }, [orders]);
+  }, [safeOrders]);
 
   const handleTabChange = useCallback(
     (tab) => {
@@ -211,8 +237,7 @@ function AdminDashboardBase() {
         const res = await fetch(`/api/users/${userId}/verification`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
-        });
+          body: JSON.stringify({ status })});
         if (res.ok) {
           notifySuccess(`Vendor account is now ${status}!`);
           fetchUsers();
@@ -226,8 +251,8 @@ function AdminDashboardBase() {
 
   // Approve/reject a pending product listing
   const handleProductApproval = useCallback(
-    async (productId, status) => {
-      const reason = status === "rejected" ? rejectReason : undefined;
+    async (productId, status, customReason) => {
+      const reason = status === "rejected" ? (customReason || rejectReason) : undefined;
       await approveProduct(productId, status, reason);
       notifySuccess(`Product ${status} successfully!`);
       setRejectingId(null);
@@ -241,8 +266,7 @@ function AdminDashboardBase() {
     async (reviewId) => {
       try {
         const res = await fetch(`/api/reviews/${reviewId}`, {
-          method: "DELETE",
-        });
+          method: "DELETE"});
         if (res.ok) {
           notifySuccess("Review moderated and deleted.");
           fetchReviews();
@@ -257,24 +281,24 @@ function AdminDashboardBase() {
   // CSV Report exporters
   const handleExportCSV = useCallback(
     (type) => {
-      let headers = [];
-      let rows = [];
-      let filename = `${type}_report.csv`;
+      let exportHeaders = [];
+      let exportRows = [];
+      const filename = `${type}_report.csv`;
 
       if (type === "orders") {
-        headers = ["Order ID", "Customer Name", "Subtotal Amount", "Status", "Date"];
-        rows = orders.map((o) => [o.id, o.customerName, o.amount, o.status, o.createdAt]);
+        exportHeaders = ["Order ID", "Customer Name", "Subtotal Amount", "Status", "Date"];
+        exportRows = safeOrders.map((o) => [o.id, o.customerName, o.totalAmount || o.amount, o.status, o.createdAt]);
       } else if (type === "users") {
-        headers = ["User ID", "Name", "Email", "Role", "Verification Status", "Rating"];
-        rows = users.map((u) => [u.id, u.name, u.email, u.role, u.verificationStatus, u.rating]);
+        exportHeaders = ["User ID", "Name", "Email", "Role", "Verification Status", "Rating"];
+        exportRows = safeUsers.map((u) => [u.id, u.name, u.email, u.role, u.verificationStatus, u.rating]);
       } else {
-        headers = ["Product ID", "Product Name", "Category", "Base Price", "Stock"];
-        rows = products.map((p) => [p.id, p.name, p.category, p.price, p.stock]);
+        exportHeaders = ["Product ID", "Product Name", "Category", "Base Price", "Stock"];
+        exportRows = safeProducts.map((p) => [p.id, p.name, p.category, p.price, p.stock]);
       }
 
       const csvContent =
         "data:text/csv;charset=utf-8," +
-        [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+        [exportHeaders.join(","), ...exportRows.map((r) => r.join(","))].join("\n");
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
@@ -283,12 +307,18 @@ function AdminDashboardBase() {
       link.click();
       document.body.removeChild(link);
     },
-    [orders, users, products]
+    [safeOrders, safeUsers, safeProducts]
   );
 
   const getVendorName = useCallback(
-    (id) => vendorsList.find((f) => f.id === id)?.name || "—",
-    [vendorsList]
+    (id) => {
+      const u = safeUsers.find((user) => user && user.id === id);
+      if (u) return u.storeName || u.name;
+      const v = vendorsList.find((f) => f && f.id === id);
+      if (v) return v.storeName || v.name;
+      return "EcoCraft Studio";
+    },
+    [safeUsers, vendorsList]
   );
   const getProductName = useCallback(
     (id) => products.find((p) => p.id === id)?.name || "—",
@@ -330,14 +360,23 @@ function AdminDashboardBase() {
   }, [customersList, searchQuery]);
 
   const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return products;
-    const q = searchQuery.toLowerCase();
-    return products.filter(
-      (p) =>
-        (p?.name?.toLowerCase() || "").includes(q) ||
-        (p?.category?.toLowerCase() || "").includes(q)
-    );
-  }, [products, searchQuery]);
+    let list = safeProducts;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (p) =>
+          (p?.name?.toLowerCase() || "").includes(q) ||
+          (p?.category?.toLowerCase() || "").includes(q) ||
+          (p?.status?.toLowerCase() || "").includes(q)
+      );
+    }
+    // Sort pending products first so admin sees pending verification items immediately
+    return [...list].sort((a, b) => {
+      const aPending = a?.status === "pending" ? 0 : 1;
+      const bPending = b?.status === "pending" ? 0 : 1;
+      return aPending - bPending;
+    });
+  }, [safeProducts, searchQuery]);
 
   const filteredOrders = useMemo(() => {
     if (!searchQuery.trim()) return orders;
@@ -361,13 +400,13 @@ function AdminDashboardBase() {
   }, [reviews, searchQuery]);
 
   const adminTabs = [
-    { id: "overview", label: t("admin.overview") || "Overview & Analytics" },
-    { id: "users", label: `${t("navigation.users") || "Users"} (${users.length})` },
-    { id: "vendors", label: `${t("navigation.vendors") || "Vendors"} (${vendorsList.length})` },
-    { id: "customers", label: `${t("navigation.buyers") || "Buyers"} (${customersList.length})` },
-    { id: "products", label: `${t("navigation.products") || "Products"} (${products.length})` },
-    { id: "orders", label: `${t("navigation.orders") || "Orders"} (${orders.length})` },
-    { id: "reviews", label: `${t("admin.reviews") || "Reviews"} (${reviews.length})` },
+    { id: "overview", label: t("admin.overview", "Overview & Analytics") },
+    { id: "users", label: `${t("navigation.users", "Users")} (${users.length})` },
+    { id: "vendors", label: `${t("navigation.vendors", "Vendors")} (${vendorsList.length})` },
+    { id: "customers", label: `${t("navigation.buyers", "Buyers")} (${customersList.length})` },
+    { id: "products", label: `${t("navigation.products", "Products")} (${products.length})` },
+    { id: "orders", label: `${t("navigation.orders", "Orders")} (${orders.length})` },
+    { id: "reviews", label: `${t("admin.reviews", "Reviews")} (${reviews.length})` },
   ];
 
   return (
@@ -383,8 +422,7 @@ function AdminDashboardBase() {
           marginBottom: "24px",
           boxShadow: "var(--shadow-md)",
           position: "relative",
-          overflow: "hidden",
-        }}
+          overflow: "hidden"}}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center" }}>
@@ -393,13 +431,13 @@ function AdminDashboardBase() {
             </div>
             <div>
               <span style={{ fontSize: "11.5px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", opacity: 0.9 }}>
-                {t("admin.adminProfile") || "PLATFORM GOVERNANCE"}
+                {t("admin.adminProfile", "PLATFORM GOVERNANCE")}
               </span>
               <h1 style={{ fontFamily: "var(--font-heading)", fontSize: "26px", fontWeight: 800, margin: 0, lineHeight: 1.2 }}>
-                {t("admin.dashboardTitle") || "Admin Control Center"}
+                {t("admin.dashboardTitle", "Admin Control Center")}
               </h1>
               <p style={{ margin: "4px 0 0 0", opacity: 0.9, fontSize: "13.5px" }}>
-                {t("admin.dashboardSubtitle") || "Manage platform users, verify vendor accounts, oversee listings, and review system analytics."}
+                {t("admin.dashboardSubtitle", "Manage platform users, verify vendor accounts, oversee listings, and review system analytics.")}
               </p>
             </div>
           </div>
@@ -453,6 +491,8 @@ function AdminDashboardBase() {
           icon={<AlertTriangle size={20} />}
           color="var(--warning)"
           bg="var(--warning-light, #fff7ed)"
+          onClick={() => handleTabChange("products")}
+          style={{ cursor: "pointer" }}
         />
       </div>
 
@@ -518,7 +558,7 @@ function AdminDashboardBase() {
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 4 }}>
                   <span className="fc-muted">Platform Node Database:</span>
-                  <strong style={{ color: "var(--brand)" }}>Connected Full-Stack Database (SQLite)</strong>
+                  <strong style={{ color: "var(--brand)" }}>Connected MySQL / Persistent Database Engine</strong>
                 </div>
               </div>
             </Card>
@@ -530,7 +570,7 @@ function AdminDashboardBase() {
                   ✓ System initialized with Vite 8 + React 19 + Express 4.
                 </div>
                 <div style={{ color: "var(--info)" }}>
-                  ℹ Synced local SQLite: {products.length} listing catalog lots loaded.
+                  ℹ Synced persistent database: {products.length} listing catalog lots loaded.
                 </div>
                 <div style={{ color: "var(--accent)" }}>
                   ℹ Verified user sessions: {users.length} active credential keys in users table.
@@ -763,48 +803,84 @@ function AdminDashboardBase() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProducts.map((p) => (
-                    <tr key={p.id}>
-                      <td>{p.id}</td>
-                      <td><strong>{p.name}</strong></td>
-                      <td><Badge variant="neutral">{p.category}</Badge></td>
-                      <td><strong>{formatCurrency(p.price)}</strong> / {p.unit}</td>
-                      <td>{p.ecoScore ?? 0}/100</td>
-                      <td>{getVendorName(p.vendorId)}</td>
-                      <td>{p.stock} {p.unit}</td>
-                      <td>
-                        <Badge variant={p.status === "approved" ? "success" : p.status === "rejected" ? "danger" : "warning"}>
-                          {p.status || "pending"}
-                        </Badge>
-                      </td>
-                      <td>
-                        {p.status === "pending" ? (
-                          rejectingId === p.id ? (
-                            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                              <input
-                                type="text"
-                                placeholder="Reason..."
-                                value={rejectReason}
-                                onChange={(e) => setRejectReason(e.target.value)}
-                                className="fc-input"
-                                style={{ width: 120, fontSize: 11 }}
-                              />
-                              <Button size="sm" variant="danger" onClick={() => handleProductApproval(p.id, "rejected")}>Confirm</Button>
-                            </div>
-                          ) : (
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <Button size="sm" variant="primary" onClick={() => handleProductApproval(p.id, "approved")}>
-                                <Check size={12} /> Approve
+                  {filteredProducts.map((p) => {
+                    const parsedScore = typeof p.ecoScore === "number" ? p.ecoScore : (parseInt(p.ecoScore, 10) || 90);
+                    return (
+                      <tr key={p.id}>
+                        <td style={{ fontSize: 11, fontFamily: "monospace" }}>{p.id}</td>
+                        <td>
+                          <button
+                            type="button"
+                            onClick={() => setInspectProduct(p)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "#059669",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              textAlign: "left",
+                              padding: 0,
+                              textDecoration: "underline"
+                            }}
+                            title="Click to inspect product details"
+                          >
+                            {p.name}
+                          </button>
+                        </td>
+                        <td><Badge variant="neutral">{p.category}</Badge></td>
+                        <td><strong>{formatCurrency(p.price)}</strong> / {p.unit || "piece"}</td>
+                        <td>
+                          <Badge variant={parsedScore >= 80 ? "success" : parsedScore >= 50 ? "warning" : "danger"}>
+                            {parsedScore}/100
+                          </Badge>
+                        </td>
+                        <td><strong>{getVendorName(p.vendorId)}</strong></td>
+                        <td>{p.stock} {p.unit || "units"}</td>
+                        <td>
+                          <Badge variant={p.status === "approved" ? "success" : p.status === "rejected" ? "danger" : "warning"}>
+                            {p.status || "pending"}
+                          </Badge>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <Button size="sm" variant="outline" onClick={() => setInspectProduct(p)} title="View complete product specifications">
+                              Inspect Details
+                            </Button>
+                            {p.status === "pending" ? (
+                              rejectingId === p.id ? (
+                                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                  <input
+                                    type="text"
+                                    placeholder="Reason..."
+                                    value={rejectReason}
+                                    onChange={(e) => setRejectReason(e.target.value)}
+                                    className="fc-input"
+                                    style={{ width: 120, fontSize: 11 }}
+                                  />
+                                  <Button size="sm" variant="danger" onClick={() => handleProductApproval(p.id, "rejected")}>Confirm</Button>
+                                </div>
+                              ) : (
+                                <>
+                                  <Button size="sm" variant="primary" onClick={() => handleProductApproval(p.id, "approved")}>
+                                    <Check size={12} /> Approve
+                                  </Button>
+                                  <Button size="sm" variant="danger" onClick={() => setRejectingId(p.id)}>Reject</Button>
+                                </>
+                              )
+                            ) : p.status === "approved" ? (
+                              <Button size="sm" variant="danger" onClick={() => handleProductApproval(p.id, "rejected", "Listing un-approved by Admin.")}>
+                                Revoke
                               </Button>
-                              <Button size="sm" variant="danger" onClick={() => setRejectingId(p.id)}>Reject</Button>
-                            </div>
-                          )
-                        ) : (
-                          <span className="fc-soft" style={{ fontSize: 11 }}>—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                            ) : (
+                              <Button size="sm" variant="primary" onClick={() => handleProductApproval(p.id, "approved")}>
+                                Re-Approve
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -857,8 +933,7 @@ function AdminDashboardBase() {
                           maxWidth: "160px",
                           whiteSpace: "nowrap",
                           overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
+                          textOverflow: "ellipsis"}}
                         title={o.deliveryAddress || "N/A"}
                       >
                         {o.deliveryAddress || "—"}
@@ -926,6 +1001,122 @@ function AdminDashboardBase() {
             </div>
           )}
         </Card>
+      )}
+
+      {/* Product Inspection & Approval Modal */}
+      {inspectProduct && (
+        <Modal
+          open={!!inspectProduct}
+          onClose={() => setInspectProduct(null)}
+          title={`Product Inspection & Verification`}
+        >
+          <div style={{ padding: "4px" }}>
+            {/* Top Banner Status & Score */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, background: "#f8fafc", padding: "14px 18px", borderRadius: 12, border: "1px solid #e2e8f0" }}>
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Product ID: {inspectProduct.id}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                  <Badge variant={inspectProduct.status === "approved" ? "success" : inspectProduct.status === "rejected" ? "danger" : "warning"}>
+                    {(inspectProduct.status || "pending").toUpperCase()}
+                  </Badge>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>Category: {inspectProduct.category}</span>
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#059669" }}>
+                  Eco {typeof inspectProduct.ecoScore === "number" ? inspectProduct.ecoScore : (parseInt(inspectProduct.ecoScore, 10) || 90)}/100
+                </div>
+                <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>Grade {inspectProduct.grade || "A"} Standard</span>
+              </div>
+            </div>
+
+            {/* Main Grid: Image Gallery & Key Details */}
+            <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 20, marginBottom: 20 }}>
+              <div>
+                <img
+                  src={inspectProduct.imageUrl || "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=800"}
+                  alt={inspectProduct.name}
+                  style={{ width: "100%", height: 190, objectFit: "cover", borderRadius: 12, border: "1px solid #cbd5e1" }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
+                <div style={{ background: "#f1f5f9", padding: 10, borderRadius: 8 }}>
+                  <span style={{ color: "#64748b", fontSize: 11, display: "block" }}>Listing Title</span>
+                  <strong style={{ fontSize: 14, color: "#0f172a" }}>{inspectProduct.name}</strong>
+                </div>
+                <div style={{ background: "#f1f5f9", padding: 10, borderRadius: 8 }}>
+                  <span style={{ color: "#64748b", fontSize: 11, display: "block" }}>Unit Price</span>
+                  <strong style={{ fontSize: 15, color: "#059669" }}>{formatCurrency(inspectProduct.price)}</strong> / {inspectProduct.unit || "piece"}
+                </div>
+                <div style={{ background: "#f1f5f9", padding: 10, borderRadius: 8 }}>
+                  <span style={{ color: "#64748b", fontSize: 11, display: "block" }}>Available Stock / MOQ</span>
+                  <strong>{inspectProduct.stock || 0} units</strong> (MOQ: {inspectProduct.moq || 1})
+                </div>
+                <div style={{ background: "#f1f5f9", padding: 10, borderRadius: 8 }}>
+                  <span style={{ color: "#64748b", fontSize: 11, display: "block" }}>Vendor / Origin</span>
+                  <strong>{getVendorName(inspectProduct.vendorId)}</strong> ({inspectProduct.region || inspectProduct.city || "India"})
+                </div>
+              </div>
+            </div>
+
+            {/* Sustainability Attributes Matrix */}
+            <div style={{ background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.25)", padding: 16, borderRadius: 12, marginBottom: 20 }}>
+              <h4 style={{ margin: "0 0 10px 0", fontSize: 14, color: "#047857", fontWeight: 800 }}>🌱 Sustainability & Environmental Impact Matrix</h4>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, fontSize: 12 }}>
+                <div><strong>Material:</strong> {inspectProduct.materialType || "Standard"}</div>
+                <div><strong>Packaging:</strong> {inspectProduct.packagingType || "Minimal Plastic"}</div>
+                <div><strong>Recyclability:</strong> {inspectProduct.recyclability || 85}%</div>
+                <div><strong>CO₂ Saved:</strong> {inspectProduct.co2SavedKg || 3.5} kg</div>
+                <div><strong>Plastic Saved:</strong> {inspectProduct.plasticSavedKg || 0.4} kg</div>
+                <div><strong>Water Saved:</strong> {inspectProduct.waterSavedLiters || 120} L</div>
+              </div>
+            </div>
+
+            {/* Full Description */}
+            <div style={{ marginBottom: 20 }}>
+              <h4 style={{ margin: "0 0 6px 0", fontSize: 13, color: "#334155", fontWeight: 700 }}>Product Description</h4>
+              <p style={{ margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.5, background: "#f8fafc", padding: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                {inspectProduct.description || "No description provided by vendor."}
+              </p>
+            </div>
+
+            {/* Approval Actions inside Modal */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
+              <Button variant="outline" size="sm" onClick={() => setInspectProduct(null)}>
+                Close Window
+              </Button>
+              <div style={{ display: "flex", gap: 10 }}>
+                {inspectProduct.status !== "rejected" && (
+                  <Button
+                    variant="danger"
+                    onClick={async () => {
+                      const reason = prompt("Enter rejection reason for vendor notification:", inspectProduct.rejectionReason || "");
+                      if (reason !== null) {
+                        await handleProductApproval(inspectProduct.id, "rejected", reason);
+                        setInspectProduct(null);
+                      }
+                    }}
+                  >
+                    Reject Listing
+                  </Button>
+                )}
+                {inspectProduct.status !== "approved" && (
+                  <Button
+                    variant="primary"
+                    style={{ background: "#10b981", fontWeight: 800 }}
+                    onClick={async () => {
+                      await handleProductApproval(inspectProduct.id, "approved");
+                      setInspectProduct(null);
+                    }}
+                  >
+                    <Check size={16} /> Approve & Publish to Marketplace
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

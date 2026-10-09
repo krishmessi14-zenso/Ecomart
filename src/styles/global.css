@@ -158,11 +158,28 @@ img { max-width: 100%; display: block; }
 .fc-btn:active { transform: translateY(1px); }
 .fc-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-.fc-btn-primary { background: var(--brand); color: var(--text-inverse); box-shadow: var(--shadow-sm); }
-.fc-btn-primary:hover:not(:disabled) { background: var(--brand-hover); box-shadow: var(--shadow-md); }
+.fc-btn-primary { 
+  background: var(--gradient-hero); 
+  color: var(--text-inverse); 
+  box-shadow: 0 4px 14px 0 rgba(11, 102, 59, 0.22); 
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.fc-btn-primary:hover:not(:disabled) { 
+  background: linear-gradient(135deg, #074828 0%, #12824e 100%); 
+  box-shadow: 0 8px 20px 0 rgba(11, 102, 59, 0.32); 
+  transform: translateY(-1.5px);
+}
 
-.fc-btn-accent { background: var(--accent); color: var(--text-inverse); box-shadow: var(--shadow-sm); }
-.fc-btn-accent:hover:not(:disabled) { background: var(--accent-dark); box-shadow: var(--shadow-md); }
+.fc-btn-accent { 
+  background: var(--gradient-accent); 
+  color: var(--text-inverse); 
+  box-shadow: 0 4px 14px 0 rgba(217, 119, 6, 0.22); 
+}
+.fc-btn-accent:hover:not(:disabled) { 
+  background: linear-gradient(135deg, #b45309 0%, #9c4221 100%); 
+  box-shadow: 0 8px 20px 0 rgba(217, 119, 6, 0.32); 
+  transform: translateY(-1.5px);
+}
 
 .fc-btn-outline { background: transparent; color: var(--text); border: 1.5px solid var(--border); }
 .fc-btn-outline:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); background: var(--brand-light); }
@@ -202,14 +219,14 @@ img { max-width: 100%; display: block; }
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-xs);
-  transition: box-shadow var(--duration-normal) ease,
-              transform var(--duration-normal) ease,
+  transition: box-shadow var(--duration-normal) var(--ease-out),
+              transform var(--duration-normal) var(--ease-out),
               border-color var(--duration-normal) ease;
 }
 .fc-card-hoverable:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
-  border-color: var(--brand-border);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-4px);
+  border-color: var(--border-strong);
 }
 .fc-card-pad { padding: var(--space-5); }
 .fc-card-pad-lg { padding: var(--space-6); }
@@ -248,7 +265,7 @@ img { max-width: 100%; display: block; }
 }
 .fc-input:focus, .fc-select:focus, .fc-textarea:focus {
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-light);
+  box-shadow: 0 0 0 3.5px rgba(15, 81, 50, 0.12);
 }
 .fc-input::placeholder { color: var(--text-soft); }
 .fc-textarea { resize: vertical; min-height: 80px; }
@@ -298,12 +315,19 @@ img { max-width: 100%; display: block; }
   display: flex;
   align-items: center;
   gap: var(--space-5);
-  padding: 12px 24px;
-  background: var(--bg-elevated);
+  padding: 14px 28px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: var(--z-nav);
+  box-shadow: 0 2px 12px 0 rgba(11, 40, 20, 0.04);
+}
+
+[data-theme="dark"] .fc-navbar {
+  background: rgba(15, 28, 17, 0.92);
 }
 
 .fc-brand {
@@ -876,11 +900,11 @@ img { max-width: 100%; display: block; }
               border-color var(--duration-normal) ease;
 }
 .fc-product-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--brand-border);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--border-strong);
 }
-.fc-product-card:hover .fc-product-thumb-img { transform: scale(1.04); }
+.fc-product-card:hover .fc-product-thumb-img { transform: scale(1.06); }
 
 .fc-product-thumb {
   height: 140px;

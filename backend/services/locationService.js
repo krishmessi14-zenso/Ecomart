@@ -607,11 +607,27 @@ export async function searchLocations(query, rawCountryCode) {
  * Reverse geocode latitude and longitude to location hierarchy
  */
 export async function reverseGeocode(lat, lng) {
-  const token = process.env.VITE_MAPBOX_ACCESS_TOKEN || process.env.MAPBOX_ACCESS_TOKEN;
+  const latitude = parseFloat(lat);
+  const longitude = parseFloat(lng);
 
-  if (token && lat && lng) {
+  if (isNaN(latitude) || isNaN(longitude)) {
+    return {
+      placeName: "Mumbai",
+      formattedAddress: "Mumbai, Maharashtra, India",
+      countryCode: "IN",
+      countryName: "India",
+      regionName: "Maharashtra",
+      districtName: "Mumbai Suburban",
+      latitude: 19.0760,
+      longitude: 72.8777
+    };
+  }
+
+  // 1. Try Mapbox API if token is configured
+  const token = process.env.VITE_MAPBOX_ACCESS_TOKEN || process.env.MAPBOX_ACCESS_TOKEN;
+  if (token) {
     try {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${token}&types=place,district,region,country&limit=1`;
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${token}&types=place,district,region,country&limit=1`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -627,10 +643,10 @@ export async function reverseGeocode(lat, lng) {
             formattedAddress: f.place_name,
             countryCode: countryCtx ? (countryCtx.short_code || "").toUpperCase() : "IN",
             countryName: countryCtx ? countryCtx.text : "India",
-            regionName: regionCtx ? regionCtx.text : "Tamil Nadu",
-            districtName: districtCtx ? districtCtx.text : "Thoothukudi",
-            latitude: lat,
-            longitude: lng
+            regionName: regionCtx ? regionCtx.text : "",
+            districtName: districtCtx ? districtCtx.text : "",
+            latitude,
+            longitude
           };
         }
       }
@@ -639,15 +655,123 @@ export async function reverseGeocode(lat, lng) {
     }
   }
 
-  // Fallback default reverse geocoding result
+  // 2. OpenStreetMap Nominatim reverse geocoding (Free, global, no API key needed)
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "EcoMart-App/1.0 (contact@ecomart.org)"
+      }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.address) {
+        const addr = data.address;
+        const countryCode = (addr.country_code || "IN").toUpperCase();
+        const countryName = addr.country || "India";
+        const regionName = addr.state || addr.region || addr.province || addr.state_district || "";
+        const districtName = addr.district || addr.state_district || addr.county || addr.city_district || addr.city || "";
+        const placeName = addr.city || addr.town || addr.village || addr.suburb || addr.municipality || addr.county || "Detected Location";
+
+        return {
+          placeName,
+          formattedAddress: data.display_name || `${placeName}, ${regionName}, ${countryName}`,
+          countryCode,
+          countryName,
+          regionName,
+          districtName,
+          latitude,
+          longitude
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("Nominatim reverse geocoding error:", err.message);
+  }
+
+  // 3. BigDataCloud reverse geocoding client API
+  try {
+    const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data) {
+        const countryCode = (data.countryCode || "IN").toUpperCase();
+        const countryName = data.countryName || "India";
+        const regionName = data.principalSubdivision || "";
+        const districtName = data.locality || data.city || "";
+        const placeName = data.locality || data.city || data.localityInfo?.informative?.[0]?.name || "Detected Location";
+
+        return {
+          placeName,
+          formattedAddress: `${placeName}, ${regionName}, ${countryName}`,
+          countryCode,
+          countryName,
+          regionName,
+          districtName,
+          latitude,
+          longitude
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("BigDataCloud reverse geocoding error:", err.message);
+  }
+
+  // 4. Dynamic fallback matching nearest location from internal database dataset
+  let closest = null;
+  let minDistance = Infinity;
+
+  try {
+    for (const [key, placeList] of Object.entries(FALLBACK_PLACES)) {
+      const parts = key.split("-");
+      const cObj = FALLBACK_COUNTRIES.find((c) => c.code === parts[0]);
+      const rObj = (FALLBACK_REGIONS[parts[0]] || []).find((r) => r.code === parts[1]);
+      const dObj = (FALLBACK_DISTRICTS[`${parts[0]}-${parts[1]}`] || []).find((d) => d.code === parts[2]);
+
+      for (const p of placeList) {
+        if (p.lat && p.lng) {
+          const dLat = (p.lat - latitude) * Math.PI / 180;
+          const dLon = (p.lng - longitude) * Math.PI / 180;
+          const a = Math.sin(dLat / 2) ** 2 + Math.cos(latitude * Math.PI / 180) * Math.cos(p.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+          const dist = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+          if (dist < minDistance) {
+            minDistance = dist;
+            closest = {
+              placeName: p.name,
+              countryCode: cObj ? cObj.code : "IN",
+              countryName: cObj ? cObj.name : "India",
+              regionName: rObj ? rObj.name : "",
+              districtName: dObj ? dObj.name : ""
+            };
+          }
+        }
+      }
+    }
+  } catch {}
+
+  if (closest) {
+    return {
+      placeName: closest.placeName,
+      formattedAddress: `${closest.placeName}, ${closest.districtName}, ${closest.regionName}, ${closest.countryName}`,
+      countryCode: closest.countryCode,
+      countryName: closest.countryName,
+      regionName: closest.regionName,
+      districtName: closest.districtName,
+      latitude,
+      longitude
+    };
+  }
+
   return {
-    placeName: "Kovilpatti",
-    formattedAddress: "Kovilpatti, Thoothukudi, Tamil Nadu, India",
+    placeName: "Detected Location",
+    formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
     countryCode: "IN",
     countryName: "India",
-    regionName: "Tamil Nadu",
-    districtName: "Thoothukudi",
-    latitude: lat || 9.1724,
-    longitude: lng || 77.8687
+    regionName: "",
+    districtName: "",
+    latitude,
+    longitude
   };
 }

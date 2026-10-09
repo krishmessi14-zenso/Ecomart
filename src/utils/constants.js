@@ -105,15 +105,6 @@ export const GRADE_COLORS = {
   C: "#6b7280",
 };
 
-// Security questions for registration
-export const SECURITY_QUESTIONS = [
-  "What is your favorite food?",
-  "What city were you born in?",
-  "What is your pet's name?",
-  "What was your first school?",
-  "What is your mother's maiden name?",
-];
-
 // Payment methods
 export const PAYMENT_METHODS = [
   { value: "cod", label: "Cash on Delivery" },

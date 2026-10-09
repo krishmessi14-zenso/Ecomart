@@ -117,7 +117,99 @@ export const Map = ({ size = 16 }) => (
   <svg {...base(size)}><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></svg>
 );
 
+export const Zap = ({ size = 16 }) => (
+  <svg {...base(size)}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>
+);
+
+export const Leaf = ({ size = 16 }) => (
+  <svg {...base(size)}><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z" /><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12" /></svg>
+);
+
+export const Award = ({ size = 16 }) => (
+  <svg {...base(size)}><circle cx="12" cy="8" r="7" /><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" /></svg>
+);
+
+export const UserCheck = ({ size = 16 }) => (
+  <svg {...base(size)}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><polyline points="17 11 19 13 23 9" /></svg>
+);
+
+export const QrCode = ({ size = 16 }) => (
+  <svg {...base(size)}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3h-3zM17 17h4v4h-4zM14 20h3v1h-3zM20 14h1v3h-1z" /></svg>
+);
+
+export const Smartphone = ({ size = 16 }) => (
+  <svg {...base(size)}><rect x="5" y="2" width="14" height="20" rx="2" ry="2" /><line x1="12" y1="18" x2="12.01" y2="18" /></svg>
+);
+
+export const Copy = ({ size = 16 }) => (
+  <svg {...base(size)}><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+);
+
+export const Sparkles = ({ size = 16 }) => (
+  <svg {...base(size)}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" /><path d="M5 3v4M3 5h4M19 17v4M17 19h4" /></svg>
+);
+
+export const Camera = ({ size = 16 }) => (
+  <svg {...base(size)}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg>
+);
+
+export const UploadCloud = ({ size = 16 }) => (
+  <svg {...base(size)}><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" /><path d="M12 12v9" /><path d="m16 16-4-4-4 4" /></svg>
+);
+
+export const History = ({ size = 16 }) => (
+  <svg {...base(size)}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" /></svg>
+);
+
+export const Trash2 = ({ size = 16 }) => (
+  <svg {...base(size)}><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
+);
+
+export const Layers = ({ size = 16 }) => (
+  <svg {...base(size)}><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>
+);
+
+export const Mail = ({ size = 16 }) => (
+  <svg {...base(size)}><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
+);
+
+export const Key = ({ size = 16 }) => (
+  <svg {...base(size)}><circle cx="7.5" cy="15.5" r="5.5" /><path d="m21 2-9.6 9.6" /><path d="m15.5 7.5 3 3" /><path d="M18.5 4.5 21 7" /></svg>
+);
+
+export const Send = ({ size = 16 }) => (
+  <svg {...base(size)}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+);
+
+export const Bot = ({ size = 18 }) => (
+  <svg {...base(size)}><rect x="3" y="11" width="18" height="10" rx="2" /><circle cx="12" cy="5" r="2" /><path d="M12 7v4" /><line x1="8" y1="16" x2="8.01" y2="16" strokeWidth="3" /><line x1="16" y1="16" x2="16.01" y2="16" strokeWidth="3" /></svg>
+);
+
+export const Mic = ({ size = 16 }) => (
+  <svg {...base(size)}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>
+);
+
+export const Volume2 = ({ size = 16 }) => (
+  <svg {...base(size)}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
+);
+
+export const VolumeX = ({ size = 16 }) => (
+  <svg {...base(size)}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>
+);
+
+export const Square = ({ size = 14 }) => (
+  <svg {...base(size)}><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /></svg>
+);
+
+export const RotateCcw = ({ size = 14 }) => (
+  <svg {...base(size)}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+);
+
+export const ShoppingCart = Cart;
+
 const Icons = {
-  Sprout, Search, Bell, Cart, Heart, Minus, Plus, Trash, Truck, Check, X, Edit, Sun, Moon, Globe, ChevronDown, Menu, Package, TrendingUp, TrendingDown, ShoppingBag, ClipboardList, AlertTriangle, MapPin, Store, Tractor, CreditCard, CheckCircle, XCircle, Loader, RefreshCw, Star, Info, ArrowLeft, ArrowRight, User, Lock, Eye, EyeOff, Filter, Sliders, Calendar, Download, ShieldCheck, HelpCircle, FileText, MessageSquare, Compass, Navigation, Map
+  Sprout, Search, Bell, Cart, ShoppingCart, Heart, Minus, Plus, Trash, Truck, Check, X, Edit, Sun, Moon, Globe, ChevronDown, Menu, Package, TrendingUp, TrendingDown, ShoppingBag, ClipboardList, AlertTriangle, MapPin, Store, Tractor, CreditCard, CheckCircle, XCircle, Loader, RefreshCw, Star, Info, ArrowLeft, ArrowRight, User, Lock, Eye, EyeOff, Filter, Sliders, Calendar, Download, ShieldCheck, HelpCircle, FileText, MessageSquare, Compass, Navigation, Map, Zap, Leaf, Award, UserCheck, QrCode, Smartphone, Copy, Sparkles, Camera, UploadCloud, History, Trash2, Layers, Mail, Key, Send, Bot, Mic, Volume2, VolumeX, Square, RotateCcw
 };
 export default Icons;
+
+

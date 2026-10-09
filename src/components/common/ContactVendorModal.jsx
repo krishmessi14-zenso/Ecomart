@@ -1,9 +1,8 @@
-import { useState, useCallback, memo } from "react";
+import { useState, memo } from "react";
 import { Modal } from "./Modal.jsx";
 import { Button } from "./Button.jsx";
 import { FormField } from "./FormField.jsx";
 import { Badge } from "./Badge.jsx";
-import { Check, Truck } from "../icons/Icons.jsx";
 import { useNotifications } from "../../hooks/useNotifications.js";
 import { useAuth } from "../../hooks/useAuth.js";
 import { formatCurrency } from "../../utils/formatters.js";
@@ -75,8 +74,7 @@ function ContactVendorModalBase({ open, onClose, vendor, product, mode = "messag
             marginBottom: 20,
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
-          }}
+            alignItems: "center"}}
         >
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -105,8 +103,7 @@ function ContactVendorModalBase({ open, onClose, vendor, product, mode = "messag
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
             gap: 10,
-            marginBottom: 20,
-          }}
+            marginBottom: 20}}
         >
           <button
             type="button"
@@ -222,8 +219,7 @@ function ContactVendorModalBase({ open, onClose, vendor, product, mode = "messag
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
-                  marginBottom: 16,
-                }}
+                  marginBottom: 16}}
               >
                 <span>Estimated Bulk Quotation ({bulkQty} {product.unit}):</span>
                 <strong style={{ fontSize: 15, color: "var(--brand)" }}>

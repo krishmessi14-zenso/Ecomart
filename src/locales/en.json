@@ -35,7 +35,9 @@
     "per": "per",
     "qty": "Qty",
     "lightMode": "Light Mode",
-    "darkMode": "Dark Mode"
+    "darkMode": "Dark Mode",
+    "harvestDate": "Manufactured Date",
+    "manufacturedDate": "Manufactured Date"
   },
   "navigation": {
     "appName": "EcoMart",
@@ -54,8 +56,24 @@
     "users": "Users",
     "verification": "Verification",
     "harvests": "Products",
+    "vendors": "Vendors",
+    "buyers": "Buyers",
+    "products": "Products",
+    "offerApprovals": "Offer Approvals",
+    "aiScan": "AI Scan & Find",
+    "scanHistory": "Scan History",
     "settings": "Settings",
     "support": "Support & Help"
+  },
+  "admin": {
+    "adminProfile": "Platform Governance",
+    "dashboardTitle": "Admin Control Center",
+    "dashboardSubtitle": "Manage platform users, verify vendor accounts, oversee listings, and review system analytics.",
+    "overview": "Overview & Analytics",
+    "reviews": "Reviews"
+  },
+  "ADMIN": {
+    "ADMINPROFILE": "Platform Governance"
   },
   "categories": {
     "All": "All",

@@ -2,19 +2,38 @@ import { memo, useMemo } from "react";
 
 const PALETTE = ["#1f6d3c", "#c17f3e", "#2c6fa8", "#8a5cae", "#c0392b", "#3fae6f"];
 
-function DonutChartBase({ data, size = 180, thickness = 26 }) {
+function DonutChartBase({ data = [], size = 180, thickness = 26 }) {
   const { segments, total } = useMemo(() => {
-    const total = data.reduce((s, d) => s + d.value, 0) || 1;
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return { segments: [], total: 0 };
+    }
+    const total = data.reduce((s, d) => s + (Number(d?.value) || 0), 0) || 1;
     const radius = size / 2;
     const circumference = 2 * Math.PI * (radius - thickness / 2);
     const segments = data.reduce((acc, d, i) => {
+      const val = Number(d?.value) || 0;
       const prevOffset = acc.length ? acc[acc.length - 1].offset + acc[acc.length - 1].length : 0;
-      const length = (d.value / total) * circumference;
-      acc.push({ ...d, length, offset: prevOffset, color: PALETTE[i % PALETTE.length] });
+      const length = (val / total) * circumference;
+      acc.push({
+        id: `seg-${i}-${d?.label || i}`,
+        label: d?.label || `Category ${i + 1}`,
+        value: val,
+        length,
+        offset: prevOffset,
+        color: PALETTE[i % PALETTE.length]
+      });
       return acc;
     }, []);
     return { segments, total };
   }, [data, size, thickness]);
+
+  if (!segments.length) {
+    return (
+      <div style={{ height: size, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-soft)", fontSize: 13, fontStyle: "italic" }}>
+        No distribution data available.
+      </div>
+    );
+  }
 
   const radius = size / 2;
   const circumference = 2 * Math.PI * (radius - thickness / 2);
@@ -26,7 +45,7 @@ function DonutChartBase({ data, size = 180, thickness = 26 }) {
           <circle r={radius - thickness / 2} fill="none" stroke="var(--bg-soft)" strokeWidth={thickness} />
           {segments.map((s) => (
             <circle
-              key={s.label}
+              key={s.id}
               r={radius - thickness / 2}
               fill="none"
               stroke={s.color}
@@ -42,7 +61,7 @@ function DonutChartBase({ data, size = 180, thickness = 26 }) {
       </svg>
       <div className="fc-chart-legend" style={{ flexDirection: "column", marginTop: 0 }}>
         {segments.map((s) => (
-          <div className="fc-legend-item" key={s.label}>
+          <div className="fc-legend-item" key={s.id}>
             <span className="fc-legend-dot" style={{ background: s.color }} />
             {s.label} · {s.value}
           </div>

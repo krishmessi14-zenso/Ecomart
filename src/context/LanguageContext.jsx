@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useMemo, useCallback, useState, useEffect } from "react";
 import i18n from "../i18n.js";
 import { translations } from "../utils/translations.js";
@@ -109,7 +108,8 @@ export function LanguageProvider({ children }) {
     [lang]
   );
 
-  const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
+  const value = useMemo(() => ({ lang, setLang, t, LANGUAGES }), [lang, setLang, t]);
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
+

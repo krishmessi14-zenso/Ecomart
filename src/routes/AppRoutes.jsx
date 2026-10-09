@@ -7,6 +7,7 @@ import { LoadingState } from "../components/common/LoadingState.jsx";
 import Navbar from "../components/layout/Navbar.jsx";
 import Sidebar from "../components/layout/Sidebar.jsx";
 import Footer from "../components/layout/Footer.jsx";
+import OfferToast from "../components/common/OfferToast.jsx";
 
 // Lazy-loaded page components for optimal bundle splitting
 const LandingPage = lazy(() => import("../pages/public/LandingPage.jsx"));
@@ -19,6 +20,7 @@ const VendorProfile = lazy(() => import("../pages/public/VendorProfile.jsx"));
 const VendorDashboard = lazy(() => import("../pages/vendor/VendorDashboard.jsx"));
 const MyStore = lazy(() => import("../pages/vendor/MyStore.jsx"));
 const MyProducts = lazy(() => import("../pages/vendor/MyProducts.jsx"));
+const MyOffers = lazy(() => import("../pages/vendor/MyOffers.jsx"));
 const VendorOrders = lazy(() => import("../pages/vendor/VendorOrders.jsx"));
 
 const CustomerDashboard = lazy(() => import("../pages/customer/CustomerDashboard.jsx"));
@@ -29,8 +31,12 @@ const CartPage = lazy(() => import("../pages/customer/CartPage.jsx"));
 const Checkout = lazy(() => import("../pages/customer/Checkout.jsx"));
 const OrderHistory = lazy(() => import("../pages/customer/OrderHistory.jsx"));
 const OrderTracking = lazy(() => import("../pages/customer/OrderTracking.jsx"));
+const ScanProduct = lazy(() => import("../pages/customer/ScanProduct.jsx"));
+const MyImpact = lazy(() => import("../pages/customer/MyImpact.jsx"));
+const OffersPage = lazy(() => import("../pages/customer/OffersPage.jsx"));
 
 const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard.jsx"));
+const OfferApprovals = lazy(() => import("../pages/admin/OfferApprovals.jsx"));
 const ProfileSettings = lazy(() => import("../pages/common/ProfileSettings.jsx"));
 const NotFound = lazy(() => import("../pages/public/NotFound.jsx"));
 
@@ -57,6 +63,7 @@ function LayoutShell() {
           </Suspense>
         </main>
       </div>
+      <OfferToast />
       <Footer />
     </div>
   );
@@ -128,7 +135,9 @@ function RoleGuard({ allowedRole }) {
         ? "/vendor/dashboard"
         : role === "customer"
         ? "/customer/dashboard"
-        : "/admin/dashboard";
+        : role === "admin"
+        ? "/admin/dashboard"
+        : "/login";
     return <Navigate to={dest} replace />;
   }
 
@@ -167,6 +176,7 @@ export default function AppRoutes() {
         <Route path="store" element={<MyStore />} />
         <Route path="products" element={<MyProducts />} />
         <Route path="products/add" element={<MyProducts openAdd={true} />} />
+        <Route path="offers" element={<MyOffers />} />
         <Route path="orders" element={<VendorOrders />} />
         <Route path="orders/:orderId" element={<VendorOrders />} />
         <Route path="profile" element={<ProfileSettings />} />
@@ -186,6 +196,9 @@ export default function AppRoutes() {
         <Route path="orders/:orderId" element={<OrderHistory />} />
         <Route path="tracking" element={<OrderTracking />} />
         <Route path="tracking/:orderId" element={<OrderTracking />} />
+        <Route path="scan" element={<ScanProduct />} />
+        <Route path="impact" element={<MyImpact />} />
+        <Route path="offers" element={<OffersPage />} />
         <Route path="profile" element={<ProfileSettings />} />
       </Route>
 
@@ -198,6 +211,7 @@ export default function AppRoutes() {
         <Route path="customers" element={<AdminDashboard />} />
         <Route path="products" element={<AdminDashboard />} />
         <Route path="orders" element={<AdminDashboard />} />
+        <Route path="offers" element={<OfferApprovals />} />
         <Route path="profile" element={<ProfileSettings />} />
       </Route>
 

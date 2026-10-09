@@ -1,5 +1,5 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useState, useEffect, useMemo, useCallback } from "react";
+import { apiFetch } from "../services/api";
 
 export const DataContext = createContext(null);
 
@@ -9,7 +9,7 @@ export function DataProvider({ children }) {
 
   const fetchProducts = useCallback(async () => {
     try {
-      const res = await fetch("/api/products");
+      const res = await apiFetch("/api/products");
       if (res.ok) {
         const data = await res.json();
         setProducts(data);
@@ -21,7 +21,7 @@ export function DataProvider({ children }) {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await fetch("/api/orders");
+      const res = await apiFetch("/api/orders");
       if (res.ok) {
         const data = await res.json();
         setOrders(data);
@@ -38,9 +38,8 @@ export function DataProvider({ children }) {
 
   const addProduct = useCallback(async (payload) => {
     try {
-      const res = await fetch("/api/products", {
+      const res = await apiFetch("/api/products", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       if (res.ok) {
@@ -55,9 +54,8 @@ export function DataProvider({ children }) {
 
   const updateProduct = useCallback(async (id, payload) => {
     try {
-      const res = await fetch(`/api/products/${id}`, {
+      const res = await apiFetch(`/api/products/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       if (res.ok) {
@@ -72,7 +70,7 @@ export function DataProvider({ children }) {
 
   const deleteProduct = useCallback(async (id) => {
     try {
-      const res = await fetch(`/api/products/${id}`, {
+      const res = await apiFetch(`/api/products/${id}`, {
         method: "DELETE"
       });
       if (res.ok) {
@@ -85,14 +83,12 @@ export function DataProvider({ children }) {
 
   const placeOrder = useCallback(async (payload) => {
     try {
-      const res = await fetch("/api/orders", {
+      const res = await apiFetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       if (res.ok) {
         const createdData = await res.json();
-        // Re-fetch all orders and products from server DB for complete sync across components
         await fetchOrders();
         await fetchProducts();
         return Array.isArray(createdData) ? createdData[0] : createdData;
@@ -104,9 +100,8 @@ export function DataProvider({ children }) {
 
   const updateOrderStatus = useCallback(async (id, status) => {
     try {
-      const res = await fetch(`/api/orders/${id}`, {
+      const res = await apiFetch(`/api/orders/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status })
       });
       if (res.ok) {
@@ -121,13 +116,13 @@ export function DataProvider({ children }) {
 
   const approveProduct = useCallback(async (id, status, rejectionReason) => {
     try {
-      const res = await fetch(`/api/products/${id}/approval`, {
+      const res = await apiFetch(`/api/products/${id}/approval`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, rejectionReason })
       });
       if (res.ok) {
-        const { product } = await res.json();
+        const data = await res.json();
+        const product = data.product || data;
         setProducts(prev => prev.map(p => p.id === id ? product : p));
         return product;
       }
@@ -137,8 +132,8 @@ export function DataProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ products, orders, addProduct, updateProduct, deleteProduct, approveProduct, placeOrder, updateOrderStatus }),
-    [products, orders, addProduct, updateProduct, deleteProduct, approveProduct, placeOrder, updateOrderStatus]
+    () => ({ products, orders, fetchProducts, fetchOrders, addProduct, updateProduct, deleteProduct, approveProduct, placeOrder, updateOrderStatus }),
+    [products, orders, fetchProducts, fetchOrders, addProduct, updateProduct, deleteProduct, approveProduct, placeOrder, updateOrderStatus]
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

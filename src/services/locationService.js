@@ -74,14 +74,80 @@ export async function searchLocations(query, countryCode = "") {
 }
 
 export async function reverseGeocodeLocation(lat, lng) {
-  if (!lat || !lng) return null;
+  if (lat === undefined || lng === undefined || lat === null || lng === null) return null;
+
+  // 1. Try Backend API service
   try {
     const res = await fetch(`/api/locations/reverse-geocode?lat=${lat}&lng=${lng}`);
     if (res.ok) {
-      return await res.json();
+      const data = await res.json();
+      if (data && data.placeName && data.placeName !== "Kovilpatti") {
+        return data;
+      }
+      if (data && data.placeName) {
+        return data;
+      }
     }
   } catch (err) {
-    console.warn("Reverse geocode failed:", err.message);
+    console.warn("Backend reverse geocode failed:", err.message);
   }
+
+  // 2. Client-side OpenStreetMap Nominatim reverse geocoding fallback
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.address) {
+        const addr = data.address;
+        const countryCode = (addr.country_code || "IN").toUpperCase();
+        const countryName = addr.country || "India";
+        const regionName = addr.state || addr.region || addr.province || addr.state_district || "";
+        const districtName = addr.district || addr.state_district || addr.county || addr.city_district || addr.city || "";
+        const placeName = addr.city || addr.town || addr.village || addr.suburb || addr.municipality || addr.county || "Detected Location";
+
+        return {
+          placeName,
+          formattedAddress: data.display_name || `${placeName}, ${regionName}, ${countryName}`,
+          countryCode,
+          countryName,
+          regionName,
+          districtName,
+          latitude: lat,
+          longitude: lng
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("Client Nominatim geocode error:", e.message);
+  }
+
+  // 3. Client-side BigDataCloud reverse geocoding fallback
+  try {
+    const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data) {
+        const countryCode = (data.countryCode || "IN").toUpperCase();
+        const countryName = data.countryName || "India";
+        const regionName = data.principalSubdivision || "";
+        const districtName = data.locality || data.city || "";
+        const placeName = data.locality || data.city || data.localityInfo?.informative?.[0]?.name || "Detected Location";
+
+        return {
+          placeName,
+          formattedAddress: `${placeName}, ${regionName}, ${countryName}`,
+          countryCode,
+          countryName,
+          regionName,
+          districtName,
+          latitude: lat,
+          longitude: lng
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("Reverse geocoding error:", err.message);
+  }
+
   return null;
 }

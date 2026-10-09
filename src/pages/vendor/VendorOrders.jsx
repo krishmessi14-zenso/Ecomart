@@ -5,8 +5,7 @@ import {
   Truck as TruckIcon,
   ClipboardList,
   RefreshCw,
-  Search as SearchIcon,
-} from "../../components/icons/Icons.jsx";
+  Search as SearchIcon} from "../../components/icons/Icons.jsx";
 import {
   Button,
   Card,
@@ -14,10 +13,8 @@ import {
   Avatar,
   SearchBox,
   StatCard,
-  Skeleton,
   TableRowSkeleton,
-  EmptyState,
-} from "../../components/common/index.js";
+  EmptyState} from "../../components/common/index.js";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
 import { useData } from "../../hooks/useData.js";
 import { useAuth } from "../../hooks/useAuth.js";
@@ -26,25 +23,27 @@ import { useNotifications } from "../../hooks/useNotifications.js";
 
 const STATUS_FILTERS = [
   "All",
-  "Pending",
-  "Accepted",
+  "Order Placed",
+  "Payment Confirmed",
+  "Accepted by Vendor",
   "Preparing",
+  "Packed",
   "Ready for Pickup",
-  "Picked Up",
   "In Transit",
-  "Out for Delivery",
   "Delivered",
-  "Cancelled",
+  "Cancelled by Customer",
+  "Rejected by Vendor"
 ];
 
 const STAGE_PROGRESSION = {
-  Pending: { next: "Accepted", label: "Accept Order" },
-  Accepted: { next: "Preparing", label: "Start Preparing" },
-  Preparing: { next: "Ready for Pickup", label: "Ready for Pickup" },
-  "Ready for Pickup": { next: "Picked Up", label: "Mark Picked Up" },
-  "Picked Up": { next: "In Transit", label: "Depart (In Transit)" },
-  "In Transit": { next: "Out for Delivery", label: "Out for Delivery" },
-  "Out for Delivery": { next: "Delivered", label: "Complete Delivery" },
+  "Order Placed": { next: "Accepted by Vendor", label: "Accept Order" },
+  "Pending": { next: "Accepted by Vendor", label: "Accept Order" },
+  "Payment Confirmed": { next: "Accepted by Vendor", label: "Accept Order" },
+  "Accepted by Vendor": { next: "Preparing", label: "Start Preparing" },
+  "Accepted": { next: "Preparing", label: "Start Preparing" },
+  "Preparing": { next: "Packed", label: "Pack Order" },
+  "Packed": { next: "Ready for Pickup", label: "Ready for Pickup" },
+  "Ready for Pickup": { next: "Picked Up", label: "Mark Picked Up" }
 };
 
 const CATEGORY_FALLBACKS = {
@@ -52,30 +51,17 @@ const CATEGORY_FALLBACKS = {
   Grains: "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=products&w=200&q=80",
   Fruits: "https://images.unsplash.com/photo-1619546813926-a78fa6372cd2?auto=format&fit=products&w=200&q=80",
   Spices: "https://images.unsplash.com/photo-1596790011568-d0f948b8ec66?auto=format&fit=products&w=200&q=80",
-  Dairy: "https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=products&w=200&q=80",
-};
+  Dairy: "https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=products&w=200&q=80"};
 
 function getStatusBadgeVariant(status) {
-  switch (status) {
-    case "Pending":
-      return "warning";
-    case "Accepted":
-    case "Confirmed":
-      return "info";
-    case "Preparing":
-    case "Ready for Pickup":
-    case "Picked Up":
-    case "In Transit":
-    case "Out for Delivery":
-      return "info";
-    case "Delivered":
-      return "success";
-    case "Cancelled":
-    case "Rejected":
-      return "danger";
-    default:
-      return "neutral";
-  }
+  if (!status) return "neutral";
+  const s = status.toLowerCase();
+  if (s.includes("pending") || s.includes("placed")) return "warning";
+  if (s.includes("accepted") || s.includes("confirmed")) return "info";
+  if (s.includes("preparing") || s.includes("packed") || s.includes("ready") || s.includes("transit")) return "info";
+  if (s.includes("delivered")) return "success";
+  if (s.includes("cancel") || s.includes("reject")) return "danger";
+  return "neutral";
 }
 
 function VendorOrdersBase() {
@@ -102,7 +88,7 @@ function VendorOrdersBase() {
   const filtered = useMemo(() => {
     let result = myOrders;
     if (statusFilter !== "All") {
-      result = result.filter((o) => o.status === statusFilter);
+      result = result.filter((o) => (o.status || "").toLowerCase() === statusFilter.toLowerCase());
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -124,7 +110,7 @@ function VendorOrdersBase() {
   }, [myOrders, statusFilter, searchQuery, getProduct]);
 
   const revenue = useMemo(() => {
-    const delivered = myOrders.filter((o) => o.status === "Delivered" || o.status === "Accepted");
+    const delivered = myOrders.filter((o) => (o.status || "").includes("Delivered") || (o.status || "").includes("Accepted"));
     const totalEarned = delivered.reduce((s, o) => s + (o.amount || 0), 0);
     const thisMonth = delivered
       .filter(
@@ -138,19 +124,60 @@ function VendorOrdersBase() {
   }, [myOrders]);
 
   const handleAdvanceStatus = useCallback(
-    (order, nextStatus) => {
-      updateOrderStatus(order.id, nextStatus);
-      notifySuccess(`Order advanced to status: ${nextStatus}`);
+    async (order, nextStatus) => {
+      try {
+        const res = await fetch(`/api/delivery/${order.id}/status`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {})
+          },
+          body: JSON.stringify({
+            status: nextStatus,
+            message: `Vendor updated status to ${nextStatus}`
+          })
+        });
+
+        if (res.ok) {
+          updateOrderStatus(order.id, nextStatus);
+          notifySuccess(`Order advanced to: ${nextStatus}`);
+        } else {
+          const err = await res.json();
+          notifyError(err.error || "Failed to update order status.");
+        }
+      } catch {
+        updateOrderStatus(order.id, nextStatus);
+        notifySuccess(`Order advanced to: ${nextStatus}`);
+      }
     },
-    [updateOrderStatus, notifySuccess]
+    [updateOrderStatus, notifySuccess, notifyError, user]
   );
 
   const handleReject = useCallback(
-    (order) => {
-      updateOrderStatus(order.id, "Cancelled");
-      notifyError("Order marked as Cancelled");
+    async (order) => {
+      try {
+        const res = await fetch(`/api/delivery/${order.id}/status`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...(user?.token ? { Authorization: `Bearer ${user.token}` } : {})
+          },
+          body: JSON.stringify({
+            status: "Rejected by Vendor",
+            message: "Order rejected by vendor."
+          })
+        });
+
+        if (res.ok) {
+          updateOrderStatus(order.id, "Rejected by Vendor");
+          notifyError("Order marked as Rejected by Vendor");
+        }
+      } catch {
+        updateOrderStatus(order.id, "Rejected by Vendor");
+        notifyError("Order marked as Rejected by Vendor");
+      }
     },
-    [updateOrderStatus, notifyError]
+    [updateOrderStatus, notifyError, user]
   );
 
   const clearSearchAndFilters = () => {
@@ -165,7 +192,7 @@ function VendorOrdersBase() {
         <div>
           <h1 className="fc-h1">{t("incomingOrders")}</h1>
           <p className="fc-muted" style={{ marginTop: 4 }}>
-            {myOrders.length} marketplace transactions cataloged for {vendorProfile.storeName || vendorProfile.name}
+            {myOrders.length} marketplace transactions cataloged for {vendorProfile?.storeName || vendorProfile?.name || "Vendor"}
           </p>
         </div>
       </div>
@@ -236,7 +263,7 @@ function VendorOrdersBase() {
                 <tr>
                   <th>{t("orderId")}</th>
                   <th>Customer</th>
-                  <th>products Lot</th>
+                  <th>Products Lot</th>
                   <th>{t("qty")}</th>
                   <th>{t("amount")}</th>
                   <th>{t("date")}</th>
@@ -269,7 +296,7 @@ function VendorOrdersBase() {
                 <tr>
                   <th>{t("orderId")}</th>
                   <th>Customer</th>
-                  <th>products Lot</th>
+                  <th>Products Lot</th>
                   <th>{t("qty")}</th>
                   <th>{t("amount")}</th>
                   <th>{t("date")}</th>
@@ -295,7 +322,7 @@ function VendorOrdersBase() {
                           <div>
                             <strong style={{ fontSize: 13 }}>{o.customerName}</strong>
                             <div className="fc-soft" style={{ fontSize: 10.5 }}>
-                              {o.deliveryAddress || "Standard marketplace Delivery"}
+                              {o.deliveryAddress || "Standard Marketplace Delivery"}
                             </div>
                           </div>
                         </div>
@@ -304,18 +331,17 @@ function VendorOrdersBase() {
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <img
                             src={prodImg}
-                            alt={prod?.name || "products"}
+                            alt={prod?.name || "Product"}
                             style={{
                               width: 34,
                               height: 34,
                               borderRadius: "var(--radius-sm)",
-                              objectFit: "cover",
-                            }}
+                              objectFit: "cover"}}
                           />
                           <div>
-                            <strong style={{ fontSize: 13 }}>{prod?.name || "products Lot"}</strong>
+                            <strong style={{ fontSize: 13 }}>{prod?.name || "Product Lot"}</strong>
                             <div className="fc-soft" style={{ fontSize: 10.5 }}>
-                              Grade {prod?.grade || "A"} • {prod?.category || "products"}
+                              Grade {prod?.grade || "A"} • {prod?.category || "Products"}
                             </div>
                           </div>
                         </div>
@@ -344,7 +370,7 @@ function VendorOrdersBase() {
                               <RefreshCw size={11} /> {step.label}
                             </Button>
                           )}
-                          {o.status === "Pending" && (
+                          {(o.status === "Pending" || o.status === "Order Placed") && (
                             <Button
                               size="sm"
                               variant="danger"
@@ -359,7 +385,7 @@ function VendorOrdersBase() {
                               ✓ Delivered
                             </span>
                           )}
-                          {o.status === "Cancelled" && (
+                          {(o.status || "").includes("Cancel") && (
                             <span style={{ color: "var(--danger)", fontSize: 12, fontWeight: 700 }}>
                               𐄂 Cancelled
                             </span>

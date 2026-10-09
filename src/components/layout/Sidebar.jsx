@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { NavLink } from "react-router-dom";
 import {
-  ClipboardList, Package, ShoppingBag, Heart, Cart as CartIcon, Truck,
+  Package, ShoppingBag, Heart, Cart as CartIcon, Truck, X,
 } from "../icons/Icons.jsx";
 import { useAuth } from "../../hooks/useAuth.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
@@ -26,18 +26,44 @@ const ShieldIcon = ({ size = 16 }) => (
   </svg>
 );
 
+const TagIcon = ({ size = 16 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} stroke="currentColor" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+    <line x1="7" y1="7" x2="7.01" y2="7" />
+  </svg>
+);
+
 const VENDOR_LINKS = [
   { path: "/vendor/dashboard", key: "navigation.overview", defaultLabel: "Overview", icon: LayoutGrid },
   { path: "/vendor/store", key: "navigation.myStore", defaultLabel: "My Store", icon: Package },
   { path: "/vendor/products", key: "navigation.myProducts", defaultLabel: "My Products", icon: ShoppingBag },
+  { path: "/vendor/offers", key: "navigation.myOffers", defaultLabel: "My Offers", icon: TagIcon },
   { path: "/vendor/orders", key: "navigation.orders", defaultLabel: "Orders", icon: Truck },
   { path: "/vendor/profile", key: "navigation.profile", defaultLabel: "Profile", icon: UserIcon },
 ];
 
+const ScanIcon = ({ size = 16 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} stroke="currentColor" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" />
+    <path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+    <line x1="7" y1="12" x2="17" y2="12" />
+  </svg>
+);
+
+const LeafIcon = ({ size = 16 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} stroke="currentColor" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.4 19 2c1 2 2 4.1 2 7 0 4.9-4 9-9 9z" />
+    <path d="M11 20v-7" />
+  </svg>
+);
+
 const CUSTOMER_LINKS = [
   { path: "/customer/dashboard", key: "navigation.ecoDashboard", defaultLabel: "Eco Dashboard", icon: LayoutGrid },
+  { path: "/customer/scan", key: "navigation.scanProduct", defaultLabel: "Scan Product", icon: ScanIcon },
+  { path: "/customer/impact", key: "navigation.myImpact", defaultLabel: "My Impact", icon: LeafIcon },
+  { path: "/customer/offers", key: "navigation.offers", defaultLabel: "Offers", icon: TagIcon },
   { path: "/customer/marketplace", key: "navigation.marketplace", defaultLabel: "Marketplace", icon: ShoppingBag },
-  { path: "/customer/orders", key: "navigation.orders", defaultLabel: "Orders", icon: ClipboardList },
+  { path: "/customer/orders", key: "navigation.orders", defaultLabel: "Orders", icon: Truck },
   { path: "/customer/wishlist", key: "navigation.wishlist", defaultLabel: "Wishlist", icon: Heart },
   { path: "/customer/cart", key: "navigation.cart", defaultLabel: "Cart", icon: CartIcon },
   { path: "/customer/profile", key: "navigation.profile", defaultLabel: "Profile", icon: UserIcon },
@@ -48,6 +74,7 @@ const ADMIN_LINKS = [
   { path: "/admin/users", key: "navigation.users", defaultLabel: "Users", icon: UserIcon },
   { path: "/admin/vendors", key: "navigation.verification", defaultLabel: "Verification", icon: ShieldIcon },
   { path: "/admin/products", key: "navigation.harvests", defaultLabel: "Products", icon: Package },
+  { path: "/admin/offers", key: "navigation.offerApprovals", defaultLabel: "Offer Approvals", icon: TagIcon },
   { path: "/admin/orders", key: "navigation.orders", defaultLabel: "Orders", icon: Truck },
   { path: "/admin/profile", key: "navigation.profile", defaultLabel: "Profile", icon: UserIcon },
 ];
@@ -71,7 +98,7 @@ function SidebarBase({ mobileOpen, onCloseMobile }) {
       </div>
       {links.map((l) => {
         const Icon = l.icon;
-        const translatedLabel = t(l.key) || l.defaultLabel;
+        const translatedLabel = t(l.key, l.defaultLabel) || l.defaultLabel;
         return (
           <NavLink
             key={l.path}

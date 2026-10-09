@@ -5,8 +5,7 @@ import {
   Search as SearchIcon,
   Truck as TruckIcon,
   Check,
-  ShoppingBag,
-} from "../../components/icons/Icons.jsx";
+  ShoppingBag} from "../../components/icons/Icons.jsx";
 import {
   Button,
   Card,
@@ -16,8 +15,7 @@ import {
   StatCard,
   Skeleton,
   TableRowSkeleton,
-  EmptyState,
-} from "../../components/common/index.js";
+  EmptyState} from "../../components/common/index.js";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
 import { useData } from "../../hooks/useData.js";
 import { useAuth } from "../../hooks/useAuth.js";
@@ -40,8 +38,7 @@ const CATEGORY_FALLBACKS = {
   Grains: "https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=products&w=200&q=80",
   Fruits: "https://images.unsplash.com/photo-1619546813926-a78fa6372cd2?auto=format&fit=products&w=200&q=80",
   Spices: "https://images.unsplash.com/photo-1596790011568-d0f948b8ec66?auto=format&fit=products&w=200&q=80",
-  Dairy: "https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=products&w=200&q=80",
-};
+  Dairy: "https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=products&w=200&q=80"};
 
 function getStatusBadgeVariant(status) {
   switch (status) {
@@ -261,8 +258,7 @@ function OrderHistoryBase() {
                               width: 36,
                               height: 36,
                               borderRadius: "var(--radius-sm)",
-                              objectFit: "cover",
-                            }}
+                              objectFit: "cover"}}
                           />
                           <div>
                             <strong style={{ fontSize: 13 }}>{prod?.name || "products Lot"}</strong>
@@ -287,8 +283,7 @@ function OrderHistoryBase() {
                           maxWidth: "180px",
                           whiteSpace: "nowrap",
                           overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
+                          textOverflow: "ellipsis"}}
                         title={o.deliveryAddress || "Standard marketplace Delivery"}
                       >
                         {o.deliveryAddress || "Standard marketplace Delivery"}

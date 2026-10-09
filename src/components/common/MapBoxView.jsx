@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { MapPin, ShieldCheck, Star } from "../icons/Icons.jsx";
+import { MapPin} from "../icons/Icons.jsx";
 import { formatCurrency } from "../../utils/formatters.js";
 import { isMapServiceAvailable } from "../../services/mapProvider.js";
 

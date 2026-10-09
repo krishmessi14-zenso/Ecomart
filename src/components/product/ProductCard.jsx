@@ -33,22 +33,24 @@ function ProductCardBase({
   const [isAdding, setIsAdding] = useState(false);
   const [animateHeart, setAnimateHeart] = useState(false);
 
-  if (!product) return null;
-
-  const color = gradeColor(product.grade);
-  const bgImg = imageError ? getProductImage(null) : getProductImage(product);
-  const ecoScore = product.ecoScore ?? 0;
-  const approval = APPROVAL_LABELS[product.status];
-
   // Check if wholesale tiers exist
   const tierCount = useMemo(() => {
+    if (!product || !product.tierPrices) return 0;
+    if (typeof product.tierPrices === "object") return Object.keys(product.tierPrices).length;
     try {
       const parsed = JSON.parse(product.tierPrices || "{}");
       return Object.keys(parsed).length;
     } catch {
       return 0;
     }
-  }, [product.tierPrices]);
+  }, [product]);
+
+  if (!product) return null;
+
+  const color = gradeColor(product.grade);
+  const bgImg = imageError ? getProductImage(null) : getProductImage(product);
+  const ecoScore = product.ecoScore ?? 0;
+  const approval = APPROVAL_LABELS[product.status];
 
   const displayVendorName = vendorName || "EcoMart Vendor";
   const displayRegion = region || product.region || "";
@@ -116,78 +118,6 @@ function ProductCardBase({
           className="fc-product-thumb-img"
         />
 
-        {/* Dark Gradient Overlay for Badges Readability */}
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.45) 100%)",
-            zIndex: 2,
-          }}
-        />
-
-        {/* Top Badges Overlay */}
-        <div
-          style={{
-            position: "absolute",
-            top: 8,
-            left: 8,
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-            zIndex: 3,
-          }}
-        >
-          {product.organic === 1 && (
-            <Badge variant="organic" />
-          )}
-          {ecoScore > 0 && (
-            <span
-              className="fc-status-badge"
-              style={{
-                fontSize: 9,
-                fontWeight: 700,
-                padding: "2px 7px",
-                background: "var(--info)",
-                color: "#ffffff",
-                boxShadow: "var(--shadow-sm)",
-              }}
-            >
-              🌍 ECO SCORE {ecoScore}
-            </span>
-          )}
-          {tierCount > 0 && (
-            <span
-              className="fc-status-badge"
-              style={{
-                fontSize: 9,
-                fontWeight: 700,
-                padding: "2px 7px",
-                background: "var(--accent)",
-                color: "#ffffff",
-                boxShadow: "var(--shadow-sm)",
-              }}
-            >
-              🤝 BULK DISCOUNTS
-            </span>
-          )}
-          {mode === "vendor" && approval && (
-            <span
-              className="fc-status-badge"
-              style={{
-                fontSize: 9,
-                fontWeight: 700,
-                padding: "2px 7px",
-                background: approval.bg,
-                color: "#ffffff",
-                boxShadow: "var(--shadow-sm)",
-              }}
-            >
-              {approval.text}
-            </span>
-          )}
-        </div>
-
         {/* Wishlist Button (Customer Mode) */}
         {mode === "customer" && (
           <button
@@ -219,6 +149,61 @@ function ProductCardBase({
           <span className="fc-tag-grade" style={{ background: color }}>
             Grade {product.grade}
           </span>
+        </div>
+
+        {/* Product Badges (Moved from image overlay to description section) */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "8px" }}>
+          {product.organic === 1 && (
+            <Badge variant="organic" />
+          )}
+          {ecoScore > 0 && (
+            <span
+              className="fc-status-badge"
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: "2px 7px",
+                borderRadius: "4px",
+                background: "var(--info)",
+                color: "#ffffff",
+                boxShadow: "var(--shadow-sm)",
+              }}
+            >
+              🌍 ECO SCORE {ecoScore}
+            </span>
+          )}
+          {tierCount > 0 && (
+            <span
+              className="fc-status-badge"
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: "2px 7px",
+                borderRadius: "4px",
+                background: "var(--accent)",
+                color: "#ffffff",
+                boxShadow: "var(--shadow-sm)",
+              }}
+            >
+              🤝 BULK DISCOUNTS
+            </span>
+          )}
+          {mode === "vendor" && approval && (
+            <span
+              className="fc-status-badge"
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: "2px 7px",
+                borderRadius: "4px",
+                background: approval.bg,
+                color: "#ffffff",
+                boxShadow: "var(--shadow-sm)",
+              }}
+            >
+              {approval.text}
+            </span>
+          )}
         </div>
 
         {/* Product Name */}
@@ -315,9 +300,23 @@ function ProductCardBase({
         {/* Footer: Prominent Price + Actions */}
         <div className="fc-product-footer" style={{ marginTop: 12 }}>
           <div className="fc-product-price">
-            <strong style={{ fontFamily: "var(--font-heading)", fontSize: "16px", color: "var(--text)" }}>
-              {formatCurrency(product.price, product.currency)}
-            </strong>
+            {product.discountPercent ? (
+              <>
+                <span style={{ textDecoration: "line-through", color: "var(--text-muted)", fontSize: "12px", marginRight: "6px" }}>
+                  {formatCurrency(product.price, product.currency)}
+                </span>
+                <strong style={{ fontFamily: "var(--font-heading)", fontSize: "16px", color: "var(--brand)" }}>
+                  {formatCurrency(product.discountedPrice || (product.price * (1 - product.discountPercent / 100)), product.currency)}
+                </strong>
+                <span style={{ background: "var(--danger)", color: "#ffffff", padding: "2px 6px", borderRadius: "4px", fontSize: "10px", fontWeight: 800, marginLeft: "6px" }}>
+                  {product.discountPercent}% OFF
+                </span>
+              </>
+            ) : (
+              <strong style={{ fontFamily: "var(--font-heading)", fontSize: "16px", color: "var(--text)" }}>
+                {formatCurrency(product.price, product.currency)}
+              </strong>
+            )}
             <span className="fc-soft" style={{ fontSize: "11.5px" }}>
               /{product.unit}
             </span>

@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useState, useMemo, useCallback } from "react";
 
 export const NavigationContext = createContext(null);

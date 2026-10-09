@@ -10,21 +10,20 @@ import {
   Tabs,
   ProductCardSkeleton,
   EmptyState,
-  ContactVendorModal,
-} from "../../components/common/index.js";
+  ContactVendorModal} from "../../components/common/index.js";
 import { ProductCard } from "../../components/product/ProductCard.jsx";
-import { GlobalLocationSelector } from "../../components/common/GlobalLocationSelector.jsx";
 import { MapBoxView } from "../../components/common/MapBoxView.jsx";
-import { MapPin, Globe, Compass, Search as SearchIcon, Heart, Cart as CartIcon, Star, Check } from "../../components/icons/Icons.jsx";
+import { Search as SearchIcon, Heart, Cart as CartIcon, Star, Check } from "../../components/icons/Icons.jsx";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
-import { CATEGORIES, REGIONS, getProductImage } from "../../utils/constants.js";
+import { CATEGORIES, getProductImage } from "../../utils/constants.js";
 import { useData } from "../../hooks/useData.js";
 import { useCart } from "../../hooks/useCart.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
 import { useDebounce } from "../../hooks/useDebounce.js";
 import { useNotifications } from "../../hooks/useNotifications.js";
 import { useAuth } from "../../hooks/useAuth.js";
-import { calculateDistanceKm, formatDistance } from "../../services/mapProvider.js";
+import { calculateDistanceKm} from "../../services/mapProvider.js";
+import { apiFetch } from "../../services/api.js";
 
 function MarketplaceBase() {
   const { t } = useLanguage();
@@ -50,7 +49,49 @@ function MarketplaceBase() {
   const [loading, setLoading] = useState(true);
   const [addedFlash, setAddedFlash] = useState(null);
   const [viewProduct, setViewProduct] = useState(null);
+  const [selectedModalImgIndex, setSelectedModalImgIndex] = useState(0);
   const [contactModal, setContactModal] = useState({ open: false, vendor: null, product: null, mode: "message" });
+
+  const modalGalleryItems = useMemo(() => {
+    if (!viewProduct) return [];
+    const fallback = getProductImage(viewProduct);
+    let list = [];
+    if (viewProduct.images) {
+      try {
+        const parsed = typeof viewProduct.images === "string" ? JSON.parse(viewProduct.images) : viewProduct.images;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          list = parsed
+            .map((item) =>
+              typeof item === "object" && item !== null && item.imageUrl
+                ? { color: item.color || null, colorHex: item.colorHex || null, imageUrl: item.imageUrl }
+                : { color: null, colorHex: null, imageUrl: typeof item === "string" ? item : "" }
+            )
+            .filter((item) => item.imageUrl && item.imageUrl.trim() !== "");
+        }
+      } catch (e) {
+        if (typeof viewProduct.images === "string") {
+          list = viewProduct.images
+            .split(",")
+            .map((url) => url.trim())
+            .filter(Boolean)
+            .map((url) => ({ color: null, colorHex: null, imageUrl: url }));
+        }
+      }
+    }
+    if (list.length === 0 && viewProduct.imageUrl && viewProduct.imageUrl.trim() !== "") {
+      list = [{ color: null, colorHex: null, imageUrl: viewProduct.imageUrl }];
+    }
+    if (list.length === 0) {
+      list = [{ color: null, colorHex: null, imageUrl: fallback }];
+    }
+    return list;
+  }, [viewProduct]);
+
+  useEffect(() => {
+    if (viewProduct) {
+      setSelectedModalImgIndex(0);
+    }
+  }, [viewProduct]);
 
   // Dynamic Vendors lookup
   const [vendors, setVendors] = useState([]);
@@ -65,6 +106,9 @@ function MarketplaceBase() {
   // Auto-complete suggestion states
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Active Offers state
+  const [activeOffers, setActiveOffers] = useState([]);
 
   // Fetch vendors list from server
   const fetchVendors = useCallback(async () => {
@@ -81,6 +125,10 @@ function MarketplaceBase() {
 
   useEffect(() => {
     fetchVendors();
+    apiFetch("/api/offers/active")
+      .then((res) => (res.ok ? res.json() : { offers: [] }))
+      .then((data) => setActiveOffers(data.offers || []))
+      .catch(() => {});
     const timer = setTimeout(() => setLoading(false), 550);
     return () => clearTimeout(timer);
   }, [fetchVendors]);
@@ -147,8 +195,7 @@ function MarketplaceBase() {
           storeName: "Unavailable Store",
           region: "",
           verificationStatus: "Pending",
-          rating: 0,
-        }
+          rating: 0}
       );
     },
     [vendors]
@@ -330,9 +377,7 @@ function MarketplaceBase() {
             customerId: currentUser.id,
             customerName: currentUser.name,
             rating: newRating,
-            comment: newComment,
-          }),
-        });
+            comment: newComment})});
 
         if (res.ok) {
           const added = await res.json();
@@ -356,8 +401,7 @@ function MarketplaceBase() {
   const categoryTabs = useMemo(() => {
     return ["All", ...CATEGORIES].map((c) => ({
       id: c,
-      label: c === "All" ? (t("all") || "All") : (t(`categories.${c}`) || c),
-    }));
+      label: c === "All" ? (t("all") || "All") : (t(`categories.${c}`) || c)}));
   }, [t]);
 
   return (
@@ -427,8 +471,7 @@ function MarketplaceBase() {
                   boxShadow: "var(--shadow-lg)",
                   zIndex: 30,
                   marginTop: "4px",
-                  overflow: "hidden",
-                }}
+                  overflow: "hidden"}}
               >
                 {suggestions.map((p) => (
                   <button
@@ -449,8 +492,7 @@ function MarketplaceBase() {
                       borderBottom: "1px solid var(--border)",
                       cursor: "pointer",
                       fontSize: "13px",
-                      color: "var(--text)",
-                    }}
+                      color: "var(--text)"}}
                   >
                     <span>🔍 <strong>{p.name}</strong></span>
                     <span className="fc-soft">{p.category}</span>
@@ -459,36 +501,7 @@ function MarketplaceBase() {
               </div>
             )}
           </div>
-          {/* Near Me & View Mode Switcher */}
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleNearMe}
-              disabled={locatingUser}
-              style={{ fontSize: "12px" }}
-            >
-              <Compass size={14} /> {locatingUser ? (t("common.loading") || "Locating...") : (t("marketplace.nearMe") || "Near Me")}
-            </Button>
 
-            <div style={{ display: "flex", background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "2px" }}>
-              <button
-                type="button"
-                className={`fc-btn fc-btn-xs ${viewMode === "grid" ? "fc-btn-primary" : "fc-btn-ghost"}`}
-                onClick={() => setViewMode("grid")}
-              >
-                {t("marketplace.gridView") || "Grid View"}
-              </button>
-              <button
-                type="button"
-                className={`fc-btn fc-btn-xs ${viewMode === "map" ? "fc-btn-primary" : "fc-btn-ghost"}`}
-                onClick={() => setViewMode("map")}
-              >
-                {t("marketplace.mapView") || "Map View"}
-              </button>
-            </div>
-          </div>
 
           {/* Sort By Dropdown */}
           <div style={{ minWidth: "160px" }}>
@@ -658,10 +671,17 @@ function MarketplaceBase() {
               {filtered.map((p) => {
                 const vendor = getVendor(p.vendorId);
                 const isCompared = !!selectedCompare.find((c) => c.id === p.id);
+                const matchingOffer = (activeOffers || []).find((o) => Array.isArray(o.productIds) && o.productIds.includes(p.id));
+                const productWithOffer = matchingOffer ? {
+                  ...p,
+                  discountPercent: Number(matchingOffer.discountValue),
+                  discountedPrice: p.price * (1 - Number(matchingOffer.discountValue) / 100)
+                } : p;
+
                 return (
                   <div key={p.id} style={{ display: "flex", flexDirection: "column" }}>
                     <ProductCard
-                      product={p}
+                      product={productWithOffer}
                       vendorName={vendor.name}
                       region={vendor.region}
                       mode="customer"
@@ -700,8 +720,7 @@ function MarketplaceBase() {
             borderTop: "2px solid var(--brand)",
             boxShadow: "var(--shadow-lg)",
             padding: "16px 24px",
-            zIndex: 100,
-          }}
+            zIndex: 100}}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <strong style={{ fontSize: 14, fontFamily: "var(--font-heading)" }}>
@@ -717,8 +736,7 @@ function MarketplaceBase() {
               display: "grid",
               gridTemplateColumns: `repeat(${selectedCompare.length + 1}, 1fr)`,
               gap: 12,
-              fontSize: 12,
-            }}
+              fontSize: 12}}
           >
             <div
               style={{
@@ -727,8 +745,7 @@ function MarketplaceBase() {
                 gap: 10,
                 fontWeight: 700,
                 color: "var(--text-muted)",
-                justifyContent: "center",
-              }}
+                justifyContent: "center"}}
             >
               <div>Product Price</div>
               <div>Grade Scale</div>
@@ -748,8 +765,7 @@ function MarketplaceBase() {
                     padding: 12,
                     borderRadius: "var(--radius-sm)",
                     border: isCheapest ? "1.5px solid var(--brand)" : "1px solid var(--border)",
-                    position: "relative",
-                  }}
+                    position: "relative"}}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 8 }}>
                     <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap", maxWidth: 120 }}>
@@ -791,15 +807,15 @@ function MarketplaceBase() {
             {/* Image Banner Header */}
             <div
               style={{
-                height: 200,
-                backgroundImage: `url(${getProductImage(viewProduct)})`,
+                height: 220,
+                backgroundImage: `url(${modalGalleryItems[selectedModalImgIndex]?.imageUrl || getProductImage(viewProduct)})`,
                 backgroundSize: "cover",
                 backgroundPosition: "center",
                 borderRadius: "var(--radius-md)",
-                marginBottom: 16,
+                marginBottom: 14,
                 position: "relative",
-                overflow: "hidden"
-              }}
+                overflow: "hidden",
+                transition: "background-image 0.25s ease"}}
             >
               <div style={{ position: "absolute", bottom: 12, left: 12, display: "flex", gap: 6 }}>
                 {viewProduct.organic === 1 && (
@@ -810,6 +826,52 @@ function MarketplaceBase() {
                 </Badge>
               </div>
             </div>
+
+            {/* Color Variant Options Swatches */}
+            {modalGalleryItems.some((item) => item.color) && (
+              <div style={{ marginBottom: 16, background: "var(--bg-soft)", padding: "10px 14px", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>
+                  🎨 Color Options: <strong style={{ color: "var(--brand)" }}>{modalGalleryItems[selectedModalImgIndex]?.color || "Default"}</strong>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {modalGalleryItems.map((item, idx) => (
+                    item.color ? (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setSelectedModalImgIndex(idx)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "5px 12px",
+                          borderRadius: "18px",
+                          border: selectedModalImgIndex === idx ? "2px solid var(--brand)" : "1px solid var(--border)",
+                          background: selectedModalImgIndex === idx ? "var(--brand-light)" : "var(--surface)",
+                          cursor: "pointer",
+                          fontSize: 11.5,
+                          fontWeight: selectedModalImgIndex === idx ? 700 : 500,
+                          color: "var(--text)",
+                          transition: "all 0.15s ease"}}
+                      >
+                        {item.colorHex && (
+                          <span
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: "50%",
+                              backgroundColor: item.colorHex,
+                              border: "1px solid rgba(0,0,0,0.15)",
+                              display: "inline-block"}}
+                          />
+                        )}
+                        <span>{item.color}</span>
+                      </button>
+                    ) : null
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Description */}
             <p className="fc-muted" style={{ fontSize: 13.5, lineHeight: 1.5 }}>
@@ -832,7 +894,7 @@ function MarketplaceBase() {
               </div>
               <div>
                 <span className="fc-soft" style={{ fontSize: 11, display: "block", fontWeight: 700 }}>
-                  HARVEST DATE
+                  MANUFACTURED DATE
                 </span>
                 <strong>{viewProduct.harvestDate ? formatDate(viewProduct.harvestDate) : "Recently"}</strong>
               </div>

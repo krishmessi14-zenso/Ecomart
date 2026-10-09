@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useEffect, useMemo, useCallback } from "react";
 import { useLocalStorage } from "../hooks/useLocalStorage.js";
 

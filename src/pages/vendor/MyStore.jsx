@@ -52,7 +52,7 @@ function MyStoreBase() {
       <div
         className="fc-hero"
         style={{
-          background: "linear-gradient(rgba(10, 32, 18, 0.78), rgba(5, 19, 11, 0.88)), url('/images/ecomart-farm.jpg') center/cover no-repeat",
+          background: "linear-gradient(rgba(10, 32, 18, 0.78), rgba(5, 19, 11, 0.88)), url('/images/ecomart-professional-hero.jpg') center/cover no-repeat",
           padding: "36px 32px",
           borderRadius: "var(--radius-lg)",
           color: "#ffffff",

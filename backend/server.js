@@ -9,12 +9,67 @@ import {
   searchLocations,
   reverseGeocode
 } from "./services/locationService.js";
+import {
+  isRazorpayConfigured,
+  getRazorpayKeyId,
+  createRazorpayOrder,
+  verifyPaymentSignature,
+  verifyWebhookSignature,
+} from "./services/razorpayService.js";
+
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import path from "path";
+import { fileURLToPath } from "url";
+import authRoutes from "./routes/auth.js";
+import aiRoutes from "./routes/ai.js";
+import deliveryRoutes from "./routes/delivery.js";
+import scanRoutes from "./routes/scan.js";
+import offersRoutes from "./routes/offers.js";
+import { uploadProductImage } from "./middleware/multer.js";
+import { authenticateToken, requireRole } from "./middleware/auth.js";
+import { apiRateLimiter } from "./middleware/rateLimiter.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
-app.use(express.json());
+const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+app.use(cors({ origin: [clientUrl, "http://localhost:5173", "http://127.0.0.1:5173"], credentials: true }));
+
+// Serve static uploaded files
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Webhook raw body parser
+app.use("/api/payments/razorpay-webhook", express.raw({ type: "application/json" }));
+
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
+app.use("/api", apiRateLimiter);
+
+// Health Check Endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", service: "EcoMart Backend API", timestamp: new Date().toISOString() });
+});
+
+// Mount Routers
+app.use("/api/auth", authRoutes);
+app.use("/api/ai", aiRoutes);
+app.use("/api", aiRoutes);
+app.use("/api/delivery", deliveryRoutes);
+app.use("/api/scan", scanRoutes);
+app.use("/api/offers", offersRoutes);
+
+// Image Upload Endpoint
+app.post("/api/upload/product", authenticateToken, requireRole("vendor", "admin"), uploadProductImage.single("image"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No image file provided." });
+  }
+  const imageUrl = "/uploads/products/" + req.file.filename;
+  res.json({ success: true, imageUrl, filename: req.file.filename });
+});
 
 // ---------------- ID / SANITIZATION HELPERS ----------------
 
@@ -28,6 +83,35 @@ function sanitizeUser(user) {
   if (!user) return null;
   const { password, securityAnswer, ...safeUser } = user;
   return safeUser;
+}
+
+// Normalize common email domain typos (e.g. gmail.coom -> gmail.com)
+function normalizeEmailDomain(email) {
+  if (!email || typeof email !== "string") return email;
+  const trimmed = email.trim().toLowerCase();
+  const atIndex = trimmed.lastIndexOf("@");
+  if (atIndex === -1) return trimmed;
+
+  const localPart = trimmed.slice(0, atIndex);
+  let domain = trimmed.slice(atIndex + 1);
+
+  // Fix common TLD typos
+  domain = domain.replace(/\.(coom|comm|cmo|con|cm)$/i, ".com");
+  domain = domain.replace(/\.orgg$/i, ".org");
+  domain = domain.replace(/\.nett$/i, ".net");
+
+  // Fix common domain provider typos
+  if (/^g(ma|am|mai|mial|mail)l?\.(com|coom|con|cm)$/i.test(domain)) {
+    domain = "gmail.com";
+  } else if (/^hotm(ai|ia|ail)\.(com|coom|con|cm)$/i.test(domain)) {
+    domain = "hotmail.com";
+  } else if (/^outl(oo|o)k\.(com|coom|con|cm)$/i.test(domain)) {
+    domain = "outlook.com";
+  } else if (/^yah(oo|o)\.(com|coom|con|cm)$/i.test(domain)) {
+    domain = "yahoo.com";
+  }
+
+  return `${localPart}@${domain}`;
 }
 
 // ---------------- ECO SCORE ENGINE ----------------
@@ -131,277 +215,55 @@ app.get("/api/locations/reverse-geocode", async (req, res) => {
   }
 });
 
-// ---------------- AUTH ROUTES ----------------
+// ---------------- RAZORPAY & VENDOR PAYOUT ROUTES ----------------
 
-// POST /api/auth/login
-app.post("/api/auth/login", async (req, res) => {
-  const { email, password, role } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password are required." });
-  }
-
-  const cleanEmail = email.trim();
-  const cleanPassword = password.trim();
+// PUT /api/users/:id/payout-settings
+app.put("/api/users/:id/payout-settings", authenticateToken, async (req, res) => {
+  if (req.user.id !== req.params.id && req.user.role !== "admin") return res.status(403).json({ error: "Access denied." });
+  const { id } = req.params;
+  const { upiId, accountHolderName, accountNumber, ifscCode, panNumber, gstin } = req.body;
 
   try {
-    let user;
-    if (role) {
-      user = await query.get(
-        "SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND TRIM(password) = ? AND role = ?",
-        [cleanEmail, cleanPassword, role]
-      );
-    } else {
-      user = await query.get(
-        "SELECT * FROM users WHERE LOWER(email) = LOWER(?) AND TRIM(password) = ?",
-        [cleanEmail, cleanPassword]
-      );
+    const existing = await query.get("SELECT * FROM users WHERE id = ?", [id]);
+    if (!existing) {
+      return res.status(404).json({ error: "User not found." });
     }
-
-    if (!user) {
-      return res.status(401).json({ error: "Invalid email or password." });
-    }
-
-    res.json(sanitizeUser(user));
-  } catch (err) {
-    console.error("Login database error:", err);
-    res.status(500).json({ error: "Internal server error." });
-  }
-});
-
-// POST /api/auth/register
-app.post("/api/auth/register", async (req, res) => {
-  const { email, password, role, name, storeName, countryCode, countryName, region, district, city, postalCode, lat, lng, currency, securityQuestion, securityAnswer, about } = req.body;
-
-  if (!email || !password || !role || !name || !securityQuestion || !securityAnswer) {
-    return res.status(400).json({ error: "Email, password, role, name, security question and answer are required." });
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-
-  try {
-    const existingUser = await query.get("SELECT id FROM users WHERE LOWER(email) = ?", [normalizedEmail]);
-    if (existingUser) {
-      return res.status(400).json({ error: "Email is already registered." });
-    }
-
-    const prefix = role === "vendor" ? "f" : (role === "customer" ? "v" : "a");
-    const id = generateId(prefix);
-    const createdAt = new Date().toISOString();
-    const verificationStatus = role === "vendor" ? "Pending" : "Verified";
 
     await query.run(
-      `INSERT INTO users (id, email, password, role, name, storeName, countryCode, countryName, region, district, city, postalCode, lat, lng, currency, securityQuestion, securityAnswer, verificationStatus, about, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `UPDATE users SET
+        upiId = ?,
+        accountHolderName = ?,
+        accountNumber = ?,
+        ifscCode = ?,
+        panNumber = ?,
+        gstin = ?
+      WHERE id = ?`,
       [
+        upiId ? upiId.trim() : null,
+        accountHolderName ? accountHolderName.trim() : null,
+        accountNumber ? accountNumber.trim() : null,
+        ifscCode ? ifscCode.trim() : null,
+        panNumber ? panNumber.trim() : null,
+        gstin ? gstin.trim() : null,
         id,
-        email.trim(),
-        password,
-        role,
-        name.trim(),
-        storeName ? storeName.trim() : null,
-        countryCode || "IN",
-        countryName || "India",
-        region ? region.trim() : null,
-        district ? district.trim() : null,
-        city ? city.trim() : null,
-        postalCode ? postalCode.trim() : null,
-        lat !== undefined ? parseFloat(lat) : null,
-        lng !== undefined ? parseFloat(lng) : null,
-        currency || "INR",
-        securityQuestion,
-        securityAnswer.trim(),
-        verificationStatus,
-        about || null,
-        createdAt
       ]
     );
 
-    const newUser = await query.get("SELECT * FROM users WHERE id = ?", [id]);
-    res.status(201).json(sanitizeUser(newUser));
+    const updatedUser = await query.get("SELECT * FROM users WHERE id = ?", [id]);
+    res.json(sanitizeUser(updatedUser));
   } catch (err) {
-    console.error("Registration database error:", err);
-    res.status(500).json({ error: "Internal server error during registration." });
+    console.error("Update vendor payout settings error:", err);
+    res.status(500).json({ error: "Failed to update vendor payout settings." });
   }
 });
 
-// POST /api/auth/send-otp
-app.post("/api/auth/send-otp", async (req, res) => {
-  const { email } = req.body;
 
-  if (!email || !email.trim()) {
-    return res.status(400).json({ error: "Email address is required." });
-  }
-
-  try {
-    const user = await query.get("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?)", [email.trim()]);
-    if (!user) {
-      return res.status(404).json({ error: "No account found with this email address." });
-    }
-
-    // Generate 6-digit OTP code & 10-minute expiry
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpiry = Date.now() + 10 * 60 * 1000;
-
-    await query.run("UPDATE users SET resetOtpCode = ?, resetOtpExpiry = ? WHERE id = ?", [otpCode, otpExpiry, user.id]);
-
-    console.log(`[ECO-MART OTP DEMO] Generated OTP ${otpCode} for user ${user.email} (expires in 10m)`);
-
-    res.json({
-      message: "Verification code sent to your email.",
-      debugOtp: otpCode,
-    });
-  } catch (err) {
-    console.error("Send OTP error:", err);
-    res.status(500).json({ error: "Internal server error while sending verification code." });
-  }
-});
-
-// POST /api/auth/verify-otp-only
-app.post("/api/auth/verify-otp-only", async (req, res) => {
-  const { email, otp } = req.body;
-
-  if (!email || !otp) {
-    return res.status(400).json({ error: "Email and 6-digit verification code are required." });
-  }
-
-  try {
-    const user = await query.get("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [email.trim()]);
-    if (!user) {
-      return res.status(404).json({ error: "Account not found." });
-    }
-
-    if (!user.resetOtpCode || user.resetOtpCode.trim() !== otp.toString().trim()) {
-      return res.status(400).json({ error: "Invalid 6-digit verification code." });
-    }
-
-    if (!user.resetOtpExpiry || Date.now() > Number(user.resetOtpExpiry)) {
-      return res.status(400).json({ error: "Verification code has expired. Please request a new code." });
-    }
-
-    res.json({ message: "Verification code confirmed!" });
-  } catch (err) {
-    console.error("Verify OTP error:", err);
-    res.status(500).json({ error: "Internal server error while verifying OTP code." });
-  }
-});
-
-// POST /api/auth/verify-otp-reset-password
-app.post("/api/auth/verify-otp-reset-password", async (req, res) => {
-  const { email, otp, newPassword } = req.body;
-
-  if (!email || !otp || !newPassword) {
-    return res.status(400).json({ error: "Email, 6-digit verification code, and new password are required." });
-  }
-
-  if (newPassword.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters." });
-  }
-
-  try {
-    const user = await query.get("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [email.trim()]);
-    if (!user) {
-      return res.status(404).json({ error: "Account not found." });
-    }
-
-    if (!user.resetOtpCode || user.resetOtpCode.trim() !== otp.toString().trim()) {
-      return res.status(400).json({ error: "Invalid 6-digit verification code." });
-    }
-
-    if (!user.resetOtpExpiry || Date.now() > Number(user.resetOtpExpiry)) {
-      return res.status(400).json({ error: "Verification code has expired. Please request a new code." });
-    }
-
-    await query.run("UPDATE users SET password = ?, resetOtpCode = NULL, resetOtpExpiry = NULL WHERE id = ?", [newPassword, user.id]);
-
-    console.log(`[ECO-MART OTP DEMO] Password reset successfully for ${user.email}`);
-
-    res.json({ message: "Password reset successfully." });
-  } catch (err) {
-    console.error("Reset password via OTP error:", err);
-    res.status(500).json({ error: "Internal server error while resetting password." });
-  }
-});
-
-// POST /api/ai/chat
-app.post("/api/ai/chat", async (req, res) => {
-  const { message } = req.body;
-
-  if (!message || !message.trim()) {
-    return res.status(400).json({ error: "Message is required." });
-  }
-
-  try {
-    const prompt = message.trim().toLowerCase();
-    let responseText = "";
-
-    if (prompt.includes("ecomart") || prompt.includes("what is")) {
-      responseText = "🌱 **EcoMart** is a dedicated marketplace for sustainable, eco-friendly, and zero-waste products connecting verified vendors directly with eco-conscious customers across India.";
-    } else if (prompt.includes("sell") || prompt.includes("vendor")) {
-      responseText = "📦 Vendors can list sustainable products, specify eco-packaging metrics, set MOQs, configure tier pricing in INR (₹), and track live sales directly from their Vendor Dashboard.";
-    } else if (prompt.includes("otp") || prompt.includes("password")) {
-      responseText = "🔐 EcoMart uses a 6-digit OTP code sent to your email for fast and secure password recovery.";
-    } else {
-      responseText = `🤖 **EcoMart AI Assistant:** I received your query regarding "${message}". I can help guide you through browsing sustainable products, vendor registrations, EcoScore ratings, and delivery tracking!`;
-    }
-
-    res.json({ reply: responseText, timestamp: new Date().toISOString() });
-  } catch (err) {
-    console.error("AI Chat error:", err);
-    res.status(500).json({ error: "Internal server error in AI Assistant." });
-  }
-});
-
-// POST /api/auth/verify-security
-app.post("/api/auth/verify-security", async (req, res) => {
-  const { email } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ error: "Email is required." });
-  }
-
-  try {
-    const user = await query.get("SELECT securityQuestion FROM users WHERE LOWER(email) = LOWER(?)", [email.trim()]);
-    if (!user) {
-      return res.status(404).json({ error: "No account found with this email address." });
-    }
-    res.json({ securityQuestion: user.securityQuestion });
-  } catch (err) {
-    console.error("Verify security question error:", err);
-    res.status(500).json({ error: "Internal server error." });
-  }
-});
-
-// POST /api/auth/reset-password
-app.post("/api/auth/reset-password", async (req, res) => {
-  const { email, securityAnswer, newPassword } = req.body;
-
-  if (!email || !securityAnswer || !newPassword) {
-    return res.status(400).json({ error: "Email, security answer, and new password are required." });
-  }
-
-  try {
-    const user = await query.get("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", [email.trim()]);
-    if (!user) {
-      return res.status(404).json({ error: "Account not found." });
-    }
-
-    if (!user.securityAnswer || user.securityAnswer.trim().toLowerCase() !== securityAnswer.trim().toLowerCase()) {
-      return res.status(400).json({ error: "Incorrect security answer." });
-    }
-
-    await query.run("UPDATE users SET password = ? WHERE id = ?", [newPassword, user.id]);
-    res.json({ message: "Password reset successfully." });
-  } catch (err) {
-    console.error("Reset password error:", err);
-    res.status(500).json({ error: "Internal server error." });
-  }
-});
 
 // PUT /api/users/:id
-app.put("/api/users/:id", async (req, res) => {
+app.put("/api/users/:id", authenticateToken, async (req, res) => {
+  if (req.user.id !== req.params.id && req.user.role !== "admin") return res.status(403).json({ error: "Access denied." });
   const { id } = req.params;
-  const { name, storeName, countryCode, countryName, region, district, city, postalCode, lat, lng, currency, securityQuestion, securityAnswer, password, about } = req.body;
+  const { name, storeName, countryCode, countryName, region, district, city, postalCode, lat, lng, currency, password, about } = req.body;
 
   try {
     const user = await query.get("SELECT * FROM users WHERE id = ?", [id]);
@@ -413,7 +275,7 @@ app.put("/api/users/:id", async (req, res) => {
 
     await query.run(
       `UPDATE users 
-       SET name = ?, storeName = ?, countryCode = ?, countryName = ?, region = ?, district = ?, city = ?, postalCode = ?, lat = ?, lng = ?, currency = ?, securityQuestion = ?, securityAnswer = ?, password = ?, about = ?
+       SET name = ?, storeName = ?, countryCode = ?, countryName = ?, region = ?, district = ?, city = ?, postalCode = ?, lat = ?, lng = ?, currency = ?, password = ?, about = ?
        WHERE id = ?`,
       [
         name !== undefined && name !== null ? safeTrim(name) : user.name,
@@ -427,8 +289,6 @@ app.put("/api/users/:id", async (req, res) => {
         lat !== undefined && lat !== null ? parseFloat(lat) : user.lat,
         lng !== undefined && lng !== null ? parseFloat(lng) : user.lng,
         currency !== undefined ? currency : user.currency,
-        securityQuestion !== undefined ? securityQuestion : user.securityQuestion,
-        securityAnswer !== undefined ? safeTrim(securityAnswer) : user.securityAnswer,
         password !== undefined && password !== null && String(password).trim() !== "" ? password : user.password,
         about !== undefined ? about : user.about,
         id
@@ -444,7 +304,7 @@ app.put("/api/users/:id", async (req, res) => {
 });
 
 // GET /api/users (For Admin)
-app.get("/api/users", async (req, res) => {
+app.get("/api/users", authenticateToken, requireRole("admin"), async (req, res) => {
   try {
     const users = await query.all("SELECT * FROM users ORDER BY createdAt DESC");
     res.json(users.map(sanitizeUser));
@@ -454,8 +314,61 @@ app.get("/api/users", async (req, res) => {
   }
 });
 
+// GET /api/admin/vendors (Admin get pending or all vendors)
+app.get("/api/admin/vendors", authenticateToken, requireRole("admin"), async (req, res) => {
+  try {
+    const status = req.query.status;
+    let sql = "SELECT * FROM users WHERE role = 'vendor'";
+    const params = [];
+    if (status) {
+      sql += " AND verificationStatus = ?";
+      params.push(status);
+    }
+    sql += " ORDER BY createdAt DESC";
+    const vendors = await query.all(sql, params);
+    res.json(vendors.map(sanitizeUser));
+  } catch (err) {
+    console.error("Fetch admin vendors error:", err);
+    res.status(500).json({ error: "Failed to fetch vendor registrations." });
+  }
+});
+
+// PUT /api/admin/vendors/:id/approval (Alias for vendor verification)
+app.put("/api/admin/vendors/:id/approval", authenticateToken, requireRole("admin"), async (req, res) => {
+  const { id } = req.params;
+  const { status, reason } = req.body; // 'Verified' | 'Rejected' | 'Approved'
+
+  const normalizedStatus = (status || "").toLowerCase().startsWith("app") || (status || "").toLowerCase().startsWith("ver") ? "Verified" : "Rejected";
+
+  try {
+    await query.run("UPDATE users SET verificationStatus = ? WHERE id = ?", [normalizedStatus, id]);
+    
+    const notifId = generateId("n");
+    await query.run(
+      "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, 'verification', 0, ?)",
+      [notifId, id, `Your vendor account verification status has been updated to ${normalizedStatus}. ${reason ? "Reason: " + reason : ""}`, new Date().toISOString()]
+    );
+
+    res.json({ message: `Vendor account updated to ${normalizedStatus} successfully.` });
+  } catch (err) {
+    console.error("Verify vendor error:", err);
+    res.status(500).json({ error: "Failed to update vendor verification." });
+  }
+});
+
+// GET /api/admin/products/pending (Admin fetch pending products)
+app.get("/api/admin/products/pending", authenticateToken, requireRole("admin"), async (req, res) => {
+  try {
+    const products = await query.all("SELECT * FROM products WHERE status = 'pending' ORDER BY createdAt DESC");
+    res.json(products);
+  } catch (err) {
+    console.error("Fetch pending products error:", err);
+    res.status(500).json({ error: "Failed to fetch pending products." });
+  }
+});
+
 // PUT /api/users/:id/verification (Admin approve/reject vendor verification)
-app.put("/api/users/:id/verification", async (req, res) => {
+app.put("/api/users/:id/verification", authenticateToken, requireRole("admin"), async (req, res) => {
   const { id } = req.params;
   const { status } = req.body; // 'Verified' | 'Rejected'
 
@@ -469,7 +382,7 @@ app.put("/api/users/:id/verification", async (req, res) => {
     // Create verification notification
     const notifId = generateId("n");
     await query.run(
-      "INSERT INTO notifications (id, userId, text, type, read, createdAt) VALUES (?, ?, ?, 'verification', 0, ?)",
+      "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, 'verification', 0, ?)",
       [notifId, id, `Your account verification status has been updated to ${status}.`, new Date().toISOString()]
     );
 
@@ -493,35 +406,67 @@ app.get("/api/products", async (req, res) => {
   }
 });
 
-// POST /api/products
-app.post("/api/products", async (req, res) => {
-  const { name, category, grade, price, currency, unit, stock, vendorId, countryCode, region, district, city, lat, lng, description, imageUrl, moq, tierPrices, organic, harvestDate, materialType, packagingType, recyclability, isRenewableEnergy, lifespanYears } = req.body;
+// Product creation handler function
+async function handleCreateProduct(req, res) {
+  const {
+    name,
+    category,
+    grade,
+    price,
+    currency,
+    unit,
+    stock,
+    vendorId,
+    countryCode,
+    region,
+    district,
+    city,
+    lat,
+    lng,
+    description,
+    imageUrl,
+    images,
+    moq,
+    tierPrices,
+    organic,
+    harvestDate,
+    materialType,
+    packagingType,
+    recyclability,
+    isRenewableEnergy,
+    lifespanYears
+  } = req.body;
 
-  if (!name || !category || !price || !unit || stock === undefined || !vendorId) {
-    return res.status(400).json({ error: "Required fields: name, category, price, unit, stock, vendorId" });
+  const resolvedVendorId = vendorId || (req.user ? req.user.id : "v_sample_vendor_1");
+  const resolvedUnit = unit || "piece";
+
+  if (!name || !category || price === undefined || price === null || stock === undefined || stock === null) {
+    return res.status(400).json({ error: "Required fields: name, category, price, stock" });
   }
 
   const id = generateId("p");
   const createdAt = new Date().toISOString();
   const eco = computeEcoMetrics({ materialType, packagingType, recyclability, isRenewableEnergy, lifespanYears });
 
+  const imagesStr = typeof images === "object" ? JSON.stringify(images) : (images || "[]");
+  const primaryImage = imageUrl || (Array.isArray(images) && images.length > 0 ? images[0] : "");
+
   try {
-    // Look up vendor's location and currency as fallback if not provided on product payload
-    const vendor = await query.get("SELECT countryCode, region, district, city, lat, lng, currency FROM users WHERE id = ?", [vendorId]);
+    const vendor = await query.get("SELECT countryCode, region, district, city, lat, lng, currency FROM users WHERE id = ?", [resolvedVendorId]);
 
     await query.run(
-      `INSERT INTO products (id, name, category, grade, price, currency, unit, stock, vendorId, countryCode, region, district, city, lat, lng, description, imageUrl, moq, tierPrices, organic, harvestDate, createdAt, status, materialType, packagingType, recyclability, isRenewableEnergy, lifespanYears, ecoScore, co2SavedKg, plasticSavedKg, waterSavedLiters, treesEquivalent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO products (id, name, category, grade, price, currency, unit, stock, vendorId, countryCode, region, district, city, lat, lng, description, imageUrl, images, moq, tierPrices, organic, harvestDate, createdAt, status, materialType, packagingType, recyclability, isRenewableEnergy, lifespanYears, ecoScore, co2SavedKg, plasticSavedKg, waterSavedLiters, treesEquivalent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         name,
         category,
         grade || "A",
-        price,
+        Number(price),
         currency || (vendor ? vendor.currency : "INR"),
-        unit,
-        stock,
-        vendorId,
+        resolvedUnit,
+        Number(stock),
+        resolvedVendorId,
         countryCode || (vendor ? vendor.countryCode : "IN"),
         region || (vendor ? vendor.region : "Tamil Nadu"),
         district || (vendor ? vendor.district : "Thoothukudi"),
@@ -529,18 +474,19 @@ app.post("/api/products", async (req, res) => {
         lat !== undefined && lat !== null ? parseFloat(lat) : (vendor && vendor.lat ? vendor.lat : 9.1724),
         lng !== undefined && lng !== null ? parseFloat(lng) : (vendor && vendor.lng ? vendor.lng : 77.8687),
         description || "",
-        imageUrl || "",
-        moq || 1,
+        primaryImage,
+        imagesStr,
+        moq ? Number(moq) : 1,
         tierPrices || "{}",
-        organic || 0,
+        organic ? 1 : 0,
         harvestDate || null,
         createdAt,
         "pending",
         materialType || "standard",
         packagingType || "minimal_plastic",
-        recyclability !== undefined ? recyclability : 80,
+        recyclability !== undefined ? Number(recyclability) : 80,
         isRenewableEnergy ? 1 : 0,
-        lifespanYears !== undefined ? lifespanYears : 2,
+        lifespanYears !== undefined ? Number(lifespanYears) : 2,
         eco.ecoScore,
         eco.co2SavedKg,
         eco.plasticSavedKg,
@@ -553,23 +499,46 @@ app.post("/api/products", async (req, res) => {
     const admins = await query.all("SELECT id FROM users WHERE role = 'admin'");
     for (const admin of admins) {
       await query.run(
-        `INSERT INTO notifications (id, userId, text, type, read, createdAt) VALUES (?, ?, ?, ?, 0, ?)`,
+        "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, ?, 0, ?)",
         [generateId("n"), admin.id, `New product "${name}" was submitted and is awaiting your approval.`, "product", createdAt]
       );
     }
 
     const newProduct = await query.get("SELECT * FROM products WHERE id = ?", [id]);
-    res.status(201).json(newProduct);
+    console.log(`✅ Product created successfully: ${id} (${name}) for vendor ${resolvedVendorId}`);
+    res.status(201).json(newProduct || { id, name, category, price, stock, vendorId: resolvedVendorId, status: "pending", ecoScore: eco.ecoScore });
   } catch (err) {
     console.error("Create product error:", err);
     res.status(500).json({ error: "Failed to create product." });
   }
+}
+
+// POST /api/products
+app.post("/api/products", authenticateToken, requireRole("vendor", "admin"), handleCreateProduct);
+
+// POST /api/vendor/products (Alias)
+app.post("/api/vendor/products", authenticateToken, requireRole("vendor", "admin"), handleCreateProduct);
+
+// GET /api/vendor/products (Vendor gets all their products regardless of status)
+app.get("/api/vendor/products", authenticateToken, requireRole("vendor", "admin"), async (req, res) => {
+  try {
+    const vendorId = req.query.vendorId || (req.user ? req.user.id : null);
+    if (!vendorId) {
+      const allProds = await query.all("SELECT * FROM products ORDER BY createdAt DESC");
+      return res.json(allProds);
+    }
+    const products = await query.all("SELECT * FROM products WHERE vendorId = ? ORDER BY createdAt DESC", [vendorId]);
+    res.json(products);
+  } catch (err) {
+    console.error("Fetch vendor products error:", err);
+    res.status(500).json({ error: "Failed to fetch vendor products." });
+  }
 });
 
 // PUT /api/products/:id
-app.put("/api/products/:id", async (req, res) => {
+app.put("/api/products/:id", authenticateToken, requireRole("vendor", "admin"), async (req, res) => {
   const { id } = req.params;
-  const { name, category, grade, price, currency, unit, stock, countryCode, region, district, city, lat, lng, description, imageUrl, moq, tierPrices, organic, harvestDate, materialType, packagingType, recyclability, isRenewableEnergy, lifespanYears } = req.body;
+  const { name, category, grade, price, currency, unit, stock, countryCode, region, district, city, lat, lng, description, imageUrl, images, moq, tierPrices, organic, harvestDate, materialType, packagingType, recyclability, isRenewableEnergy, lifespanYears } = req.body;
 
   try {
     const product = await query.get("SELECT * FROM products WHERE id = ?", [id]);
@@ -591,9 +560,11 @@ app.put("/api/products/:id", async (req, res) => {
     // Material/pricing edits require the marketplace listing to go back through admin review
     const nextStatus = ecoInputsChanged || name !== undefined || category !== undefined ? "pending" : product.status;
 
+    const imagesStr = images !== undefined ? (typeof images === "object" ? JSON.stringify(images) : images) : product.images;
+
     await query.run(
       `UPDATE products 
-       SET name = ?, category = ?, grade = ?, price = ?, currency = ?, unit = ?, stock = ?, countryCode = ?, region = ?, district = ?, city = ?, lat = ?, lng = ?, description = ?, imageUrl = ?, moq = ?, tierPrices = ?, organic = ?, harvestDate = ?,
+       SET name = ?, category = ?, grade = ?, price = ?, currency = ?, unit = ?, stock = ?, countryCode = ?, region = ?, district = ?, city = ?, lat = ?, lng = ?, description = ?, imageUrl = ?, images = ?, moq = ?, tierPrices = ?, organic = ?, harvestDate = ?,
            materialType = ?, packagingType = ?, recyclability = ?, isRenewableEnergy = ?, lifespanYears = ?, ecoScore = ?, co2SavedKg = ?, plasticSavedKg = ?, waterSavedLiters = ?, treesEquivalent = ?,
            status = ?, rejectionReason = ''
        WHERE id = ?`,
@@ -613,6 +584,7 @@ app.put("/api/products/:id", async (req, res) => {
         lng !== undefined && lng !== null ? parseFloat(lng) : product.lng,
         description !== undefined ? description : product.description,
         imageUrl !== undefined ? imageUrl : product.imageUrl,
+        imagesStr,
         moq !== undefined ? moq : product.moq,
         tierPrices !== undefined ? tierPrices : product.tierPrices,
         organic !== undefined ? organic : product.organic,
@@ -641,7 +613,7 @@ app.put("/api/products/:id", async (req, res) => {
 });
 
 // PUT /api/products/:id/approval  (Admin: approve or reject a pending product)
-app.put("/api/products/:id/approval", async (req, res) => {
+app.put("/api/products/:id/approval", authenticateToken, requireRole("admin"), async (req, res) => {
   const { id } = req.params;
   const { status, rejectionReason } = req.body;
 
@@ -658,7 +630,7 @@ app.put("/api/products/:id/approval", async (req, res) => {
     await query.run("UPDATE products SET status = ?, rejectionReason = ? WHERE id = ?", [status, status === "rejected" ? (rejectionReason || "") : "", id]);
 
     await query.run(
-      `INSERT INTO notifications (id, userId, text, type, read, createdAt) VALUES (?, ?, ?, ?, 0, ?)`,
+      "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, ?, 0, ?)",
       [
         generateId("n"),
         product.vendorId,
@@ -679,7 +651,7 @@ app.put("/api/products/:id/approval", async (req, res) => {
 });
 
 // DELETE /api/products/:id
-app.delete("/api/products/:id", async (req, res) => {
+app.delete("/api/products/:id", authenticateToken, requireRole("vendor", "admin"), async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -696,11 +668,355 @@ app.delete("/api/products/:id", async (req, res) => {
   }
 });
 
-// ---------------- ORDER ROUTES ----------------
+// ---------------- PAYMENT & PAYOUT ROUTES ----------------
+
+// POST /api/payments/create-razorpay-order
+app.post("/api/payments/create-razorpay-order", authenticateToken, async (req, res) => {
+  const { orderId } = req.body;
+
+  if (!orderId) {
+    return res.status(400).json({ error: "EcoMart Order ID is required." });
+  }
+
+  // Ensure Razorpay environment variables are configured
+  if (!isRazorpayConfigured()) {
+    return res.status(400).json({
+      error: "Razorpay credentials are not properly configured in backend environment. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in your .env file."
+    });
+  }
+
+  try {
+    const order = await query.get("SELECT * FROM orders WHERE id = ?", [orderId]);
+    if (!order) {
+      return res.status(404).json({ error: `Order '${orderId}' not found.` });
+    }
+
+    if (order.paymentStatus === "paid") {
+      return res.status(400).json({ error: "Order is already paid." });
+    }
+
+    // Convert totalAmount (INR) to paise (integer)
+    const amountInPaise = Math.round(Number(order.totalAmount || 0) * 100);
+    if (amountInPaise <= 0) {
+      return res.status(400).json({ error: "Order total amount must be greater than zero." });
+    }
+
+    // Create real Razorpay Order via official SDK
+    const rzpOrder = await createRazorpayOrder({
+      amount: amountInPaise,
+      currency: order.currency || "INR",
+      receipt: String(order.id),
+      notes: {
+        ecoMartOrderId: String(order.id),
+        customerName: order.customerName || "Customer"
+      }
+    });
+
+    const rzpOrderId = rzpOrder ? rzpOrder.id : null;
+
+    // Update order with returned razorpayOrderId and paymentStatus
+    if (rzpOrderId) {
+      await query.run(
+        `UPDATE orders SET razorpayOrderId = ?, paymentStatus = 'payment_created' WHERE id = ?`,
+        [rzpOrderId, order.id]
+      );
+    }
+
+    const keyId = getRazorpayKeyId();
+
+    res.json({
+      keyId,
+      razorpayOrderId: rzpOrderId,
+      amount: amountInPaise,
+      currency: order.currency || "INR",
+      ecoMartOrderId: order.id
+    });
+  } catch (err) {
+    console.error("Create Razorpay order error:", err);
+    res.status(500).json({ error: err.message || "Failed to create Razorpay order." });
+  }
+});
+
+// POST /api/payments/verify-razorpay-payment
+app.post("/api/payments/verify-razorpay-payment", authenticateToken, async (req, res) => {
+  const {
+    razorpay_order_id,
+    razorpay_payment_id,
+    razorpay_signature,
+    razorpayOrderId,
+    razorpayPaymentId,
+    razorpaySignature,
+    orderId
+  } = req.body;
+
+  const rzpOrderId = razorpay_order_id || razorpayOrderId;
+  const rzpPaymentId = razorpay_payment_id || razorpayPaymentId;
+  const rzpSignature = razorpay_signature || razorpaySignature;
+
+  if (!rzpOrderId || !rzpPaymentId || !rzpSignature) {
+    return res.status(400).json({ error: "Missing required Razorpay payment response parameters." });
+  }
+
+  try {
+    // Retrieve target order by orderId or razorpayOrderId
+    const targetId = orderId || rzpOrderId;
+    const order = await query.get("SELECT * FROM orders WHERE id = ? OR razorpayOrderId = ?", [targetId, rzpOrderId]);
+
+    if (!order) {
+      return res.status(404).json({ error: "Associated EcoMart order not found." });
+    }
+
+    // Idempotency check: if order is already paid, return clean success without repeating side effects
+    if (order.paymentStatus === "paid") {
+      return res.json({
+        success: true,
+        message: "Payment already verified.",
+        orderId: order.id,
+        paymentId: order.razorpayPaymentId || rzpPaymentId
+      });
+    }
+
+    // Cryptographically verify payment signature using HMAC SHA-256
+    const isValid = verifyPaymentSignature({
+      razorpayOrderId: rzpOrderId,
+      razorpayPaymentId: rzpPaymentId,
+      razorpaySignature: rzpSignature
+    });
+
+    if (!isValid) {
+      console.warn(`❌ Invalid Razorpay signature for order ${order.id}`);
+
+      // Update payment status to failed and record reason
+      await query.run(
+        `UPDATE orders SET paymentStatus = 'failed', paymentFailureReason = 'Invalid HMAC signature' WHERE id = ?`,
+        [order.id]
+      );
+
+      // Release reserved stock back to inventory
+      const items = await query.all("SELECT productId, qty FROM order_items WHERE orderId = ?", [order.id]);
+      for (const item of items) {
+        if (item.productId && item.qty) {
+          await query.run("UPDATE products SET stock = stock + ? WHERE id = ?", [item.qty, item.productId]);
+        }
+      }
+
+      return res.status(400).json({
+        success: false,
+        error: "Razorpay payment signature verification failed. Payment cannot be accepted."
+      });
+    }
+
+    const verifiedAt = new Date().toISOString();
+
+    // Mark order as paid & confirmed
+    await query.run(
+      `UPDATE orders SET
+        paymentStatus = 'paid',
+        status = 'Confirmed',
+        paymentVerifiedAt = ?,
+        razorpayOrderId = ?,
+        razorpayPaymentId = ?,
+        razorpaySignature = ?,
+        vendorPayoutStatus = 'pending'
+      WHERE id = ?`,
+      [verifiedAt, rzpOrderId, rzpPaymentId, rzpSignature, order.id]
+    );
+
+    // Notify Customer
+    if (order.customerId) {
+      await query.run(
+        "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, 'order', 0, ?)",
+        [
+          generateId("n"),
+          order.customerId,
+          `Payment of ₹${order.totalAmount || 0} for Order ${order.id} was verified successfully! Razorpay Payment ID: ${rzpPaymentId}`,
+          verifiedAt
+        ]
+      );
+    }
+
+    // Notify Vendors & increment completed orders count
+    const vendorItems = await query.all("SELECT DISTINCT vendorId FROM order_items WHERE orderId = ?", [order.id]);
+    for (const vItem of vendorItems) {
+      if (vItem.vendorId) {
+        await query.run(
+          "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, 'order', 0, ?)",
+          [
+            generateId("n"),
+            vItem.vendorId,
+            `Order ${order.id} payment of ₹${order.totalAmount || 0} has been confirmed. Payout is pending processing.`,
+            verifiedAt
+          ]
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "Razorpay payment verified successfully!",
+      orderId: order.id,
+      paymentId: rzpPaymentId,
+      verifiedAt
+    });
+  } catch (err) {
+    console.error("Verify Razorpay payment error:", err);
+    res.status(500).json({ error: "Failed to verify payment." });
+  }
+});
+
+// POST /api/payments/cancel-razorpay-payment
+app.post("/api/payments/cancel-razorpay-payment", authenticateToken, async (req, res) => {
+  const { orderId, reason } = req.body;
+
+  if (!orderId) {
+    return res.status(400).json({ error: "Order ID is required." });
+  }
+
+  try {
+    const order = await query.get("SELECT * FROM orders WHERE id = ?", [orderId]);
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+
+    if (order.paymentStatus !== "paid") {
+      await query.run(
+        "UPDATE orders SET paymentStatus = 'cancelled', paymentFailureReason = ? WHERE id = ?",
+        [reason || "Payment cancelled by customer", orderId]
+      );
+
+      // Release reserved stock back to inventory
+      const items = await query.all("SELECT productId, qty FROM order_items WHERE orderId = ?", [orderId]);
+      for (const item of items) {
+        if (item.productId && item.qty) {
+          await query.run("UPDATE products SET stock = stock + ? WHERE id = ?", [item.qty, item.productId]);
+        }
+      }
+    }
+
+    res.json({ message: "Payment cancelled and reserved stock released.", orderId });
+  } catch (err) {
+    console.error("Cancel payment error:", err);
+    res.status(500).json({ error: "Failed to cancel payment." });
+  }
+});
+
+// POST /api/payments/razorpay-webhook
+app.post("/api/payments/razorpay-webhook", async (req, res) => {
+  const signature = req.headers["x-razorpay-signature"];
+
+  if (!signature) {
+    return res.status(400).json({ error: "Missing x-razorpay-signature header." });
+  }
+
+  const rawBody = req.body;
+  if (!verifyWebhookSignature(rawBody, signature)) {
+    console.warn("⚠️ Webhook signature verification failed!");
+    return res.status(400).json({ error: "Invalid webhook signature." });
+  }
+
+  try {
+    const bodyStr = Buffer.isBuffer(rawBody) ? rawBody.toString("utf8") : String(rawBody);
+    const eventData = JSON.parse(bodyStr);
+    const event = eventData.event;
+    const payload = eventData.payload;
+
+    console.log(`Received verified Razorpay Webhook event: ${event}`);
+
+    if (event === "payment.captured" || event === "order.paid") {
+      const paymentEntity = payload?.payment?.entity;
+      const rzpOrderId = paymentEntity?.order_id || payload?.order?.entity?.id;
+      const rzpPaymentId = paymentEntity?.id;
+
+      if (rzpOrderId) {
+        const order = await query.get("SELECT * FROM orders WHERE razorpayOrderId = ?", [rzpOrderId]);
+        if (order && order.paymentStatus !== "paid") {
+          const verifiedAt = new Date().toISOString();
+          await query.run(
+            `UPDATE orders SET
+              paymentStatus = 'paid',
+              status = 'Confirmed',
+              paymentVerifiedAt = ?,
+              razorpayPaymentId = ?,
+              vendorPayoutStatus = 'pending'
+            WHERE id = ?`,
+            [verifiedAt, rzpPaymentId || "", order.id]
+          );
+
+          if (order.customerId) {
+            await query.run(
+              "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, 'order', 0, ?)",
+              [generateId("n"), order.customerId, `Payment of ₹${order.totalAmount} for Order ${order.id} confirmed via Razorpay Webhook.`, verifiedAt]
+            );
+          }
+        }
+      }
+    } else if (event === "payment.failed") {
+      const paymentEntity = payload?.payment?.entity;
+      const rzpOrderId = paymentEntity?.order_id;
+
+      if (rzpOrderId) {
+        const order = await query.get("SELECT * FROM orders WHERE razorpayOrderId = ?", [rzpOrderId]);
+        if (order && order.paymentStatus === "pending") {
+          await query.run(
+            "UPDATE orders SET paymentStatus = 'failed', paymentFailureReason = ? WHERE id = ?",
+            [paymentEntity?.error_description || "Payment failed at gateway", order.id]
+          );
+
+          // Release reserved stock
+          const items = await query.all("SELECT productId, qty FROM order_items WHERE orderId = ?", [order.id]);
+          for (const item of items) {
+            if (item.productId && item.qty) {
+              await query.run("UPDATE products SET stock = stock + ? WHERE id = ?", [item.qty, item.productId]);
+            }
+          }
+        }
+      }
+    }
+
+    res.json({ status: "ok" });
+  } catch (err) {
+    console.error("Razorpay webhook processing error:", err);
+    res.status(500).json({ error: "Webhook processing error." });
+  }
+});
+
+// GET /api/orders/:id/payment
+app.get("/api/orders/:id/payment", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const order = await query.get(
+      "SELECT id, totalAmount, currency, status, paymentStatus, razorpayOrderId, razorpayPaymentId, paymentVerifiedAt, vendorPayoutStatus, paymentFailureReason FROM orders WHERE id = ?",
+      [id]
+    );
+    if (!order) {
+      return res.status(404).json({ error: "Order not found." });
+    }
+    res.json(order);
+  } catch (err) {
+    console.error("Fetch order payment details error:", err);
+    res.status(500).json({ error: "Failed to fetch order payment status." });
+  }
+});
+
+
+// GET /api/products/compare/:id
+app.get("/api/products/compare/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const targetProduct = await query.get(`SELECT * FROM products WHERE id = ?`, [id]);
+    if (!targetProduct) {
+      return res.status(404).json({ error: "Comparison product not found." });
+    }
+    res.json(targetProduct);
+  } catch (err) {
+    console.error("Fetch compare product error:", err);
+    res.status(500).json({ error: "Failed to fetch comparison details." });
+  }
+});
 
 // GET /api/orders
 // Returns joined order items to keep backward compatibility with frontend pages
-app.get("/api/orders", async (req, res) => {
+app.get("/api/orders", authenticateToken, async (req, res) => {
   try {
     const joinedOrders = await query.all(`
       SELECT 
@@ -736,87 +1052,131 @@ app.get("/api/orders", async (req, res) => {
 });
 
 // POST /api/orders (Unified Multi-Item B2B Checkout)
-app.post("/api/orders", async (req, res) => {
-  const { customerId, customerName, deliveryCountry, deliveryRegion, deliveryDistrict, deliveryCity, deliveryPostalCode, deliveryAddress, paymentMethod, totalAmount, currency, items } = req.body;
+app.post("/api/orders", authenticateToken, async (req, res) => {
+  const {
+    customerId,
+    customerName,
+    deliveryCountry,
+    deliveryRegion,
+    deliveryDistrict,
+    deliveryCity,
+    deliveryPostalCode,
+    deliveryAddress,
+    paymentMethod,
+    totalAmount,
+    deliveryFee = 0,
+    currency,
+    items
+  } = req.body;
 
-  if (!customerName || !items || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: "Required: customerName and non-empty items array." });
+  const finalCustomerId = req.user?.id || customerId;
+  const finalCustomerName = customerName || req.user?.name || "Customer";
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "Required: non-empty items array." });
   }
 
-  const orderId = `EM-${Math.floor(Math.random() * 9000 + 1000)}`;
-  const createdAt = new Date().toISOString();
-  // Award 1 Green Point per ₹100 spent, minimum 10 points per order
-  const greenPointsEarned = Math.max(10, Math.round((Number(totalAmount) || 0) / 100));
-
   try {
-    // 1. Insert Group Order
+    // 1. Server-side authoritative validation of product stock and unit prices
+    let calculatedSubtotal = 0;
+    const validatedItems = [];
+
+    for (const item of items) {
+      const product = await query.get("SELECT * FROM products WHERE id = ?", [item.productId]);
+      if (!product) {
+        return res.status(400).json({ error: `Product '${item.productId}' was not found.` });
+      }
+
+      if ((product.stock || 0) < item.qty) {
+        return res.status(400).json({
+          error: `Insufficient stock for '${product.name}'. Available: ${product.stock}, requested: ${item.qty}`
+        });
+      }
+
+      const authoritativeUnitPrice = Number(product.price) || Number(item.unitPrice) || 0;
+      const itemAmount = authoritativeUnitPrice * item.qty;
+      calculatedSubtotal += itemAmount;
+
+      validatedItems.push({
+        productId: product.id,
+        vendorId: product.vendorId || item.vendorId || null,
+        productName: product.name,
+        qty: item.qty,
+        unitPrice: authoritativeUnitPrice,
+        amount: itemAmount
+      });
+    }
+
+    // Authoritative total calculation (subtotal + delivery fee)
+    const authoritativeTotal = parseFloat((calculatedSubtotal + (Number(deliveryFee) || 0)).toFixed(2));
+    const finalTotal = totalAmount && Math.abs(Number(totalAmount) - authoritativeTotal) < 5 ? Number(totalAmount) : authoritativeTotal;
+
+    const orderId = `EM-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const createdAt = new Date().toISOString();
+    const greenPointsEarned = Math.max(10, Math.round(finalTotal / 100));
+    const initialPaymentStatus = paymentMethod === "cod" ? "pending" : "pending";
+    const initialOrderStatus = "Pending";
+
+    // 2. Insert Order record with paymentStatus = 'pending'
     await query.run(
-      `INSERT INTO orders (id, customerId, customerName, deliveryCountry, deliveryRegion, deliveryDistrict, deliveryCity, deliveryPostalCode, deliveryAddress, paymentMethod, totalAmount, currency, status, greenPointsEarned, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?)`,
+      `INSERT INTO orders (
+        id, customerId, customerName, deliveryCountry, deliveryRegion, deliveryDistrict, deliveryCity, deliveryPostalCode, deliveryAddress, paymentMethod, totalAmount, currency, status, paymentStatus, vendorPayoutStatus, greenPointsEarned, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_started', ?, ?)`,
       [
         orderId,
-        customerId || null,
-        customerName,
+        finalCustomerId || null,
+        finalCustomerName,
         deliveryCountry || "India",
         deliveryRegion || null,
         deliveryDistrict || null,
         deliveryCity || null,
         deliveryPostalCode || null,
         deliveryAddress || null,
-        paymentMethod || "cod",
-        totalAmount,
+        paymentMethod || "Razorpay",
+        finalTotal,
         currency || "INR",
+        initialOrderStatus,
+        initialPaymentStatus,
         greenPointsEarned,
         createdAt
       ]
     );
 
-    // Credit Green Reward Points to the customer's account
+    // Credit Green Reward Points if customer ID is present
     if (customerId) {
       await query.run("UPDATE users SET greenPoints = COALESCE(greenPoints, 0) + ? WHERE id = ?", [greenPointsEarned, customerId]);
       await query.run(
-        `INSERT INTO notifications (id, userId, text, type, read, createdAt) VALUES (?, ?, ?, 'order', 0, ?)`,
-        [generateId("n"), customerId, `Order ${orderId} placed successfully! You earned +${greenPointsEarned} Green Points.`, createdAt]
+        "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, 'order', 0, ?)",
+        [generateId("n"), customerId, `Order ${orderId} created! You earned +${greenPointsEarned} Green Points.`, createdAt]
       );
     }
 
-    // 2. Insert Order Items and update product stock
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
+    // 3. Insert Order Items and reserve stock
+    for (let i = 0; i < validatedItems.length; i++) {
+      const vItem = validatedItems[i];
       const itemId = `${orderId}-${i + 1}`;
 
-      // Server-side authoritative lookup of product to derive vendorId and name securely
-      const product = await query.get("SELECT vendorId, name, price FROM products WHERE id = ?", [item.productId]);
-      const vendorId = (product && product.vendorId) ? product.vendorId : (item.vendorId || null);
-      const unitPrice = item.unitPrice || (product ? product.price : 0);
-      const itemAmount = item.amount || (item.qty * unitPrice);
-
-      // Insert Order Item
       await query.run(
-        `INSERT INTO order_items (id, orderId, productId, vendorId, qty, unitPrice, amount)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [itemId, orderId, item.productId, vendorId, item.qty, unitPrice, itemAmount]
+        `INSERT INTO order_items (id, orderId, productId, vendorId, qty, unitPrice, amount) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [itemId, orderId, vItem.productId, vItem.vendorId, vItem.qty, vItem.unitPrice, vItem.amount]
       );
 
-      // Decrement stock
+      // Reserve stock (decrement)
       await query.run(
         "UPDATE products SET stock = MAX(0, stock - ?) WHERE id = ?",
-        [item.qty, item.productId]
+        [vItem.qty, vItem.productId]
       );
 
-      // Create dynamic vendor notification
-      if (vendorId) {
-        const notifId = generateId("n");
-        const notifText = `New order ${orderId} received for ${item.qty}x ${product ? product.name : "product"} from ${customerName}`;
+      // Notify vendor
+      if (vItem.vendorId) {
         await query.run(
-          `INSERT INTO notifications (id, userId, text, type, read, createdAt)
-           VALUES (?, ?, ?, 'order', 0, ?)`,
-          [notifId, vendorId, notifText, createdAt]
+          "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, 'order', 0, ?)",
+          [generateId("n"), vItem.vendorId, `New order ${orderId} received for ${vItem.qty}x ${vItem.productName} from ${customerName}`, createdAt]
         );
       }
     }
 
-    // Return joined rows reflecting all order items created for this order
+    // Return created joined order records
     const createdJoined = await query.all(`
       SELECT o.*, oi.productId, oi.vendorId, oi.qty, oi.amount, oi.unitPrice, oi.id as itemId
       FROM orders o JOIN order_items oi ON o.id = oi.orderId
@@ -826,12 +1186,12 @@ app.post("/api/orders", async (req, res) => {
     res.status(201).json(createdJoined);
   } catch (err) {
     console.error("Create order database error:", err);
-    res.status(500).json({ error: "Failed to place order." });
+    res.status(500).json({ error: "Failed to create order." });
   }
 });
 
 // PUT /api/orders/:id (Update order status and notify user)
-app.put("/api/orders/:id", async (req, res) => {
+app.put("/api/orders/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body; // 'Pending', 'Accepted', 'Preparing', 'Ready for Pickup', 'Picked Up', 'In Transit', 'Out for Delivery', 'Delivered', 'Cancelled'
 
@@ -852,8 +1212,7 @@ app.put("/api/orders/:id", async (req, res) => {
       const notifId = generateId("n");
       const notifText = `Order ${id} is now ${status}`;
       await query.run(
-        `INSERT INTO notifications (id, userId, text, type, read, createdAt)
-         VALUES (?, ?, ?, 'order', 0, ?)`,
+        "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, 'order', 0, ?)",
         [notifId, order.customerId, notifText, new Date().toISOString()]
       );
     }
@@ -885,7 +1244,7 @@ app.put("/api/orders/:id", async (req, res) => {
 // ---------------- NOTIFICATION ROUTES ----------------
 
 // GET /api/notifications (Linked strictly to userId)
-app.get("/api/notifications", async (req, res) => {
+app.get("/api/notifications", authenticateToken, async (req, res) => {
   const { userId } = req.query;
 
   try {
@@ -911,7 +1270,7 @@ app.get("/api/notifications", async (req, res) => {
 });
 
 // POST /api/notifications
-app.post("/api/notifications", async (req, res) => {
+app.post("/api/notifications", authenticateToken, async (req, res) => {
   const { userId, text, type } = req.body;
 
   if (!userId || !text) {
@@ -923,13 +1282,12 @@ app.post("/api/notifications", async (req, res) => {
 
   try {
     await query.run(
-      `INSERT INTO notifications (id, userId, text, type, read, createdAt)
-       VALUES (?, ?, ?, ?, 0, ?)`,
+      "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, ?, 0, ?)",
       [id, userId, text, type || "system", createdAt]
     );
 
     const newNotif = await query.get("SELECT * FROM notifications WHERE id = ?", [id]);
-    newNotif.read = !!newNotif.read;
+    if (newNotif) newNotif.read = !!newNotif.read;
     res.status(201).json(newNotif);
   } catch (err) {
     console.error("Create notification database error:", err);
@@ -938,14 +1296,14 @@ app.post("/api/notifications", async (req, res) => {
 });
 
 // PUT /api/notifications/read-all
-app.put("/api/notifications/read-all", async (req, res) => {
+app.put("/api/notifications/read-all", authenticateToken, async (req, res) => {
   const { userId } = req.body;
 
   try {
     if (userId) {
-      await query.run("UPDATE notifications SET read = 1 WHERE userId = ?", [userId]);
+      await query.run("UPDATE notifications SET `read` = 1 WHERE userId = ?", [userId]);
     } else {
-      await query.run("UPDATE notifications SET read = 1");
+      await query.run("UPDATE notifications SET `read` = 1");
     }
     res.json({ message: "All notifications marked as read." });
   } catch (err) {
@@ -955,11 +1313,11 @@ app.put("/api/notifications/read-all", async (req, res) => {
 });
 
 // PUT /api/notifications/:id/read
-app.put("/api/notifications/:id/read", async (req, res) => {
+app.put("/api/notifications/:id/read", authenticateToken, async (req, res) => {
   const { id } = req.params;
 
   try {
-    await query.run("UPDATE notifications SET read = 1 WHERE id = ?", [id]);
+    await query.run("UPDATE notifications SET `read` = 1 WHERE id = ?", [id]);
     res.json({ message: "Notification marked as read.", id });
   } catch (err) {
     console.error("Read single notification error:", err);
@@ -996,7 +1354,7 @@ app.get("/api/reviews", async (req, res) => {
 });
 
 // POST /api/reviews
-app.post("/api/reviews", async (req, res) => {
+app.post("/api/reviews", authenticateToken, async (req, res) => {
   const { productId, vendorId, customerId, customerName, rating, comment } = req.body;
 
   if (!vendorId || !customerId || !customerName || !rating || !comment) {
@@ -1038,7 +1396,7 @@ app.post("/api/reviews", async (req, res) => {
 });
 
 // DELETE /api/reviews/:id (For moderation)
-app.delete("/api/reviews/:id", async (req, res) => {
+app.delete("/api/reviews/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -1053,7 +1411,8 @@ app.delete("/api/reviews/:id", async (req, res) => {
 // ---------------- ANALYTICS & INTELLIGENCE ROUTES ----------------
 
 // GET /api/reports/vendor/:vendorId
-app.get("/api/reports/vendor/:vendorId", async (req, res) => {
+app.get("/api/reports/vendor/:vendorId", authenticateToken, requireRole("vendor", "admin"), async (req, res) => {
+  if (req.user.id !== req.params.vendorId && req.user.role !== "admin") return res.status(403).json({ error: "Access denied." });
   const { vendorId } = req.params;
 
   try {
@@ -1211,7 +1570,7 @@ app.post("/api/translate", async (req, res) => {
   for (let idx = 0; idx < unCachedTexts.length; idx++) {
     const origText = unCachedTexts[idx];
     const targetIdx = unCachedIndices[idx];
-    let translated = null;
+    let translated;
 
     if (gcpTranslatedTexts && gcpTranslatedTexts[idx]) {
       translated = gcpTranslatedTexts[idx];
@@ -1244,7 +1603,7 @@ app.get("/api/coupons", async (req, res) => {
 });
 
 // POST /api/coupons - create a coupon (Admin)
-app.post("/api/coupons", async (req, res) => {
+app.post("/api/coupons", authenticateToken, requireRole("admin"), async (req, res) => {
   const { code, description, discountPercentage, pointsRequired } = req.body;
   if (!code || discountPercentage === undefined || pointsRequired === undefined) {
     return res.status(400).json({ error: "Required: code, discountPercentage, pointsRequired" });
@@ -1267,7 +1626,7 @@ app.post("/api/coupons", async (req, res) => {
 });
 
 // DELETE /api/coupons/:id - remove a coupon (Admin)
-app.delete("/api/coupons/:id", async (req, res) => {
+app.delete("/api/coupons/:id", authenticateToken, requireRole("admin"), async (req, res) => {
   try {
     await query.run("DELETE FROM coupons WHERE id = ?", [req.params.id]);
     res.json({ message: "Coupon removed successfully.", id: req.params.id });
@@ -1278,7 +1637,7 @@ app.delete("/api/coupons/:id", async (req, res) => {
 });
 
 // POST /api/coupons/:id/redeem - a customer redeems Green Points for a coupon
-app.post("/api/coupons/:id/redeem", async (req, res) => {
+app.post("/api/coupons/:id/redeem", authenticateToken, async (req, res) => {
   const { customerId } = req.body;
   if (!customerId) return res.status(400).json({ error: "customerId is required." });
 
@@ -1295,7 +1654,7 @@ app.post("/api/coupons/:id/redeem", async (req, res) => {
 
     await query.run("UPDATE users SET greenPoints = greenPoints - ? WHERE id = ?", [coupon.pointsRequired, customerId]);
     await query.run(
-      `INSERT INTO notifications (id, userId, text, type, read, createdAt) VALUES (?, ?, ?, 'reward', 0, ?)`,
+      "INSERT INTO notifications (id, userId, text, type, `read`, createdAt) VALUES (?, ?, ?, 'reward', 0, ?)",
       [generateId("n"), customerId, `You redeemed ${coupon.pointsRequired} points for coupon ${coupon.code} (${coupon.discountPercentage}% off).`, new Date().toISOString()]
     );
 
@@ -1307,39 +1666,118 @@ app.post("/api/coupons/:id/redeem", async (req, res) => {
   }
 });
 
-// ---------------- AI ECO ASSISTANT ----------------
+// ---------------- GEMINI AI SUITE & ECO DASHBOARD ----------------
 
-const ECO_ASSISTANT_FAQ = [
-  { keywords: ["eco score", "score"], reply: "The Eco Score (0-100) is calculated from a product's material type, packaging, recyclability percentage, use of renewable energy in manufacturing, and expected lifespan. Higher scores mean a lower environmental footprint." },
-  { keywords: ["green point", "reward", "points"], reply: "You earn Green Reward Points on every order (1 point per ₹100 spent, minimum 10 points). Redeem them for discount coupons on your Eco Dashboard." },
-  { keywords: ["carbon", "footprint", "co2"], reply: "Each product page shows estimated CO2 saved, plastic avoided, water saved, and tree-equivalents compared to a conventional alternative, based on its Eco Score." },
-  { keywords: ["return", "refund"], reply: "You can request a return within 7 days of delivery from your Order History page. Sustainable packaging is reused wherever possible during returns." },
-  { keywords: ["vendor", "sell", "become a vendor"], reply: "To sell on EcoMart, register with the Vendor role, complete your store profile, and submit products for Admin approval. Approved products appear in the marketplace immediately." },
-  { keywords: ["shipping", "delivery"], reply: "Delivery timelines depend on your vendor's location and product availability. Track any order live from Order Tracking under your dashboard." },
-  { keywords: ["payment"], reply: "EcoMart supports Cash on Delivery, UPI, and Card payments at checkout." },
-  { keywords: ["wishlist"], reply: "Tap the heart icon on any product to save it to your Wishlist for later." },
-  { keywords: ["cancel"], reply: "Orders can be cancelled from Order History while they are still in 'Pending' or 'Confirmed' status." }
-];
-
-// POST /api/ai/chat - lightweight rule-based EcoMart assistant (no external API key required)
-app.post("/api/ai/chat", (req, res) => {
-  const { message } = req.body;
-  if (!message || typeof message !== "string") {
-    return res.status(400).json({ error: "A 'message' string is required." });
+// Helper: Call Gemini API REST Endpoint
+async function callGeminiApi(promptText, inlineImageBase64 = null, mimeType = "image/jpeg") {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey.includes("your_") || apiKey.includes("here")) {
+    return null;
   }
 
-  const lower = message.toLowerCase();
-  const match = ECO_ASSISTANT_FAQ.find((entry) => entry.keywords.some((k) => lower.includes(k)));
+  const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"];
+  const fetch = (await import("node-fetch")).default;
 
-  const reply = match
-    ? match.reply
-    : "I'm the EcoMart Eco Assistant! Ask me about Eco Scores, Green Reward Points, carbon footprint, shipping, payments, returns, or becoming a vendor.";
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const parts = [{ text: promptText }];
+      if (inlineImageBase64) {
+        let cleanBase64 = inlineImageBase64;
+        if (cleanBase64.startsWith("data:")) {
+          const split = cleanBase64.split(";base64,");
+          mimeType = split[0].replace("data:", "") || mimeType;
+          cleanBase64 = split[1] || cleanBase64;
+        }
+        parts.push({
+          inline_data: {
+            mime_type: mimeType,
+            data: cleanBase64
+          }
+        });
+      }
 
-  res.json({ reply });
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts }] })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return text;
+      }
+    } catch (err) {
+      // Quietly ignore individual model attempt failures
+    }
+  }
+  return null;
+}
+
+
+
+
+
+// GET /api/customer/eco-dashboard - Customer Sustainability Dashboard Stats
+app.get("/api/customer/eco-dashboard", authenticateToken, async (req, res) => {
+  const userId = req.query.userId || (req.user ? req.user.id : "u_krishmessi91");
+
+  try {
+    const user = await query.get("SELECT greenPoints, greenpoints, name, email FROM users WHERE id = ?", [userId]);
+    const orders = await query.all("SELECT * FROM orders WHERE customerId = ?", [userId]);
+
+    const userGreenPoints = user ? (user.greenPoints !== undefined ? user.greenPoints : (user.greenpoints !== undefined ? user.greenpoints : 150)) : 150;
+    const totalPurchases = orders.length;
+    let co2SavedKg = totalPurchases * 3.5;
+    let plasticSavedKg = totalPurchases * 0.45;
+    let waterSavedLiters = totalPurchases * 120;
+    let treesEquivalent = parseFloat((totalPurchases * 0.15).toFixed(2));
+
+    res.json({
+      userId,
+      userName: user ? user.name : "Eco Buyer",
+      greenPoints: userGreenPoints,
+      totalOrders: totalPurchases,
+      co2SavedKg: parseFloat(co2SavedKg.toFixed(2)),
+      plasticSavedKg: parseFloat(plasticSavedKg.toFixed(2)),
+      waterSavedLiters: Math.round(waterSavedLiters),
+      treesEquivalent,
+      badges: [
+        { name: "Plastic Free Pioneer", icon: "🌱", unlocked: totalPurchases >= 1 },
+        { name: "Carbon Zero Champion", icon: "⚡", unlocked: totalPurchases >= 3 },
+        { name: "Tree Planter Hero", icon: "🌳", unlocked: totalPurchases >= 5 }
+      ],
+      recentScans: []
+    });
+  } catch (err) {
+    console.error("Fetch Eco Dashboard error:", err);
+    res.status(500).json({ error: "Failed to fetch eco dashboard statistics." });
+  }
 });
 
 // Start Express Server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Backend Express server listening at http://localhost:${PORT}`);
+}).on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`❌ Port ${PORT} is already in use by another process.`);
+    console.error(`👉 Please free port ${PORT} or stop existing node processes.`);
+    process.exit(1);
+  } else {
+    console.error("Backend Express server error:", err);
+    process.exit(1);
+  }
 });
 
+
+
+// Global Express Error Handler Middleware
+app.use((err, req, res, next) => {
+  console.error("Global express error handler caught:", err);
+  res.status(err.status || 500).json({ error: err.message || "Internal server error." });
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Promise Rejection at:", promise, "reason:", reason);
+});

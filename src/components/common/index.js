@@ -22,3 +22,4 @@ export { ErrorBoundary } from "./ErrorBoundary.jsx";
 export { ContactVendorModal } from "./ContactVendorModal.jsx";
 export { GlobalLocationSelector } from "./GlobalLocationSelector.jsx";
 export { MapBoxView } from "./MapBoxView.jsx";
+export { EcoScoreGauge } from "./EcoScoreGauge.jsx";

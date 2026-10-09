@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiFetch } from "../../services/api";
 import { StatCard } from "../../components/common/StatCard.jsx";
 import { OnboardingModal } from "../../components/common/OnboardingModal.jsx";
 import { ShoppingBag, Heart, Cart, ClipboardList, TrendingUp, Info } from "../../components/icons/Icons.jsx";
-import { formatCurrency, formatDate } from "../../utils/formatters.js";
+import { formatCurrency} from "../../utils/formatters.js";
 import { useData } from "../../hooks/useData.js";
 import { useCart } from "../../hooks/useCart.js";
 import { useAuth } from "../../hooks/useAuth.js";
@@ -17,19 +18,18 @@ function CustomerDashboardBase() {
   const { cart, wishlist } = useCart();
   const navigate = useNavigate();
 
-  const [onboardingOpen, setOnboardingOpen] = useState(false);
-
-  useEffect(() => {
+  const [onboardingOpen, setOnboardingOpen] = useState(() => {
     try {
       const shown = localStorage.getItem("fc_customer_onboarding_done");
       if (!shown) {
-        setOnboardingOpen(true);
         localStorage.setItem("fc_customer_onboarding_done", "true");
+        return true;
       }
     } catch {
       /* noop */
     }
-  }, []);
+    return false;
+  });
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -70,21 +70,26 @@ function CustomerDashboardBase() {
   const [redeemMsg, setRedeemMsg] = useState("");
 
   useEffect(() => {
-    setGreenPoints(currentUser?.greenPoints || 0);
-  }, [currentUser]);
-
-  const fetchCoupons = useCallback(async () => {
-    try {
-      const res = await fetch("/api/coupons");
-      if (res.ok) setCoupons(await res.json());
-    } catch (err) {
-      console.error("Failed to load coupons:", err);
+    if (currentUser?.greenPoints !== undefined) {
+      const timer = setTimeout(() => {
+        setGreenPoints(currentUser.greenPoints);
+      }, 0);
+      return () => clearTimeout(timer);
     }
-  }, []);
+  }, [currentUser?.greenPoints]);
 
   useEffect(() => {
-    fetchCoupons();
-  }, [fetchCoupons]);
+    let mounted = true;
+    apiFetch("/api/coupons")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (mounted) setCoupons(data);
+      })
+      .catch((err) => console.error("Failed to load coupons:", err));
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleRedeem = useCallback(async (couponId) => {
     setRedeemMsg("");
@@ -92,8 +97,7 @@ function CustomerDashboardBase() {
       const res = await fetch(`/api/coupons/${couponId}/redeem`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerId: currentUser?.id }),
-      });
+        body: JSON.stringify({ customerId: currentUser?.id })});
       const data = await res.json();
       if (res.ok) {
         setGreenPoints(data.user.greenPoints);
@@ -122,8 +126,7 @@ function CustomerDashboardBase() {
       co2SavedKg: totals.co2SavedKg.toFixed(1),
       plasticSavedKg: totals.plasticSavedKg.toFixed(1),
       waterSavedLiters: Math.round(totals.waterSavedLiters),
-      treesEquivalent: totals.treesEquivalent.toFixed(2),
-    };
+      treesEquivalent: totals.treesEquivalent.toFixed(2)};
   }, [myOrders, products]);
 
   // ---------------- INTELLIGENCE INSIGHTS ----------------
@@ -224,11 +227,23 @@ function CustomerDashboardBase() {
         <StatCard label={t("wishlistedItems") || "Wishlisted Items"} value={wishlist.length} icon={<Heart size={18} />} color="var(--danger)" bg="var(--danger-light)" />
       </div>
 
+
+
       {/* Eco Impact & Green Reward Points */}
       <div className="fc-panel" style={{ marginBottom: "24px" }}>
-        <div className="fc-forecast-header" style={{ marginBottom: 16 }}>
-          <h3 className="fc-h3">🌍 My Eco Dashboard</h3>
-          <p className="fc-muted fc-mt-4">Your real environmental impact and Green Reward Points, calculated from your actual orders.</p>
+        <div className="fc-forecast-header" style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h3 className="fc-h3">🌍 My Eco Dashboard & Impact Scanner</h3>
+            <p className="fc-muted fc-mt-4">Your real environmental impact, product AI scanner, and Green Reward Points.</p>
+          </div>
+          <div style={{ display: "flex", gap: "10px" }}>
+            <Button variant="primary" onClick={() => navigate("/customer/scan")}>
+              📷 Scan Product
+            </Button>
+            <Button variant="outline" onClick={() => navigate("/customer/impact")}>
+              🌱 View My Impact
+            </Button>
+          </div>
         </div>
 
         <div className="fc-stat-grid" style={{ marginBottom: 16 }}>
