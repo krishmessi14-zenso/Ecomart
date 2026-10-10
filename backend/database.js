@@ -750,11 +750,28 @@ function runMemoryQueryRun(sql, params) {
 
 async function initDatabase() {
   const dbType = (process.env.DB_TYPE || "mysql").toLowerCase();
-  const host = process.env.DB_HOST || "localhost";
-  const port = Number(process.env.DB_PORT || 3306);
-  const user = process.env.DB_USER || "root";
-  const password = process.env.DB_PASSWORD || "";
-  const databaseName = process.env.DB_NAME || "ecomart";
+  let host = process.env.DB_HOST || "localhost";
+  let port = Number(process.env.DB_PORT || 3306);
+  let user = process.env.DB_USER || "root";
+  let password = process.env.DB_PASSWORD || "";
+  let databaseName = process.env.DB_NAME || "ecomart";
+  let ssl = process.env.DB_SSL === "true" || port === 4000 || host.includes("tidbcloud") || host.includes("aivencloud");
+
+  // Support direct connection URI (TiDB / MySQL URI)
+  const connUri = process.env.DATABASE_URL || process.env.TIDB_URI;
+  if (connUri) {
+    try {
+      const parsed = new URL(connUri);
+      host = parsed.hostname;
+      if (parsed.port) port = Number(parsed.port);
+      user = decodeURIComponent(parsed.username);
+      password = decodeURIComponent(parsed.password);
+      if (parsed.pathname && parsed.pathname.length > 1) {
+        databaseName = parsed.pathname.slice(1);
+      }
+      ssl = true;
+    } catch {}
+  }
 
   if (dbType === "file" || dbType === "json" || dbType === "memory" || dbType === "store") {
     console.log("🌱 EcoMart Persistent Data Store Engine activated (Standalone File Mode).");
@@ -765,15 +782,27 @@ async function initDatabase() {
     return;
   }
 
+  const sslOptions = ssl ? { minVersion: "TLSv1.2", rejectUnauthorized: true } : undefined;
   const maxRetries = 4;
   let connected = false;
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const tempConnection = await mysql.createConnection({ host, port, user, password, connectTimeout: 2000 });
-      await tempConnection.query(`CREATE DATABASE IF NOT EXISTS \`${databaseName}\``);
-      await tempConnection.end();
+      try {
+        const tempConnection = await mysql.createConnection({
+          host,
+          port,
+          user,
+          password,
+          connectTimeout: 5000,
+          ...(sslOptions ? { ssl: sslOptions } : {})
+        });
+        await tempConnection.query(`CREATE DATABASE IF NOT EXISTS \`${databaseName}\``);
+        await tempConnection.end();
+      } catch {
+        // Cloud MySQL/TiDB users often operate within pre-provisioned databases; continue to pool connection
+      }
 
       mysqlPool = mysql.createPool({
         host,
@@ -783,7 +812,9 @@ async function initDatabase() {
         database: databaseName,
         waitForConnections: true,
         connectionLimit: 10,
-        queueLimit: 0
+        queueLimit: 0,
+        connectTimeout: 10000,
+        ...(sslOptions ? { ssl: sslOptions } : {})
       });
 
       await mysqlPool.query("SELECT 1");
@@ -796,7 +827,7 @@ async function initDatabase() {
         break;
       }
       if (attempt < maxRetries) {
-        console.log(`⚠️ MySQL connection attempt ${attempt}/${maxRetries} failed (${err.code || err.message}). Retrying in 1.5 seconds...`);
+        console.log(`⚠️ MySQL/TiDB connection attempt ${attempt}/${maxRetries} failed (${err.code || err.message}). Retrying in 1.5 seconds...`);
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     }
