@@ -1,11 +1,12 @@
 services:
   - type: web
-    name: ecomart-marketplace
+    name: ecomart-backend
     runtime: node
     plan: free
-    region: oregon
-    buildCommand: npm install && npm install --prefix backend && npm run build
-    startCommand: npm start
+    region: singapore
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
