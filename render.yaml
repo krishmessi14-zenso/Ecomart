@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: ecomart-marketplace
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm install --prefix backend && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_TYPE
+        value: json
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: admin@ecomart.com
+      - key: ADMIN_PASSWORD
+        value: Admin@12345
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false

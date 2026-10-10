@@ -8,6 +8,7 @@
     "vite": "vite",
     "backend": "npm install --prefix backend && npm start --prefix backend",
     "build": "vite build",
+    "start": "node backend/server.js",
     "lint": "eslint .",
     "test": "node tests/run_tests.js",
     "preview": "vite preview"

@@ -20,6 +20,7 @@ import {
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import authRoutes from "./routes/auth.js";
 import aiRoutes from "./routes/ai.js";
@@ -37,7 +38,25 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
-app.use(cors({ origin: [clientUrl, "http://localhost:5173", "http://127.0.0.1:5173"], credentials: true }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (
+        origin === clientUrl ||
+        origin === "http://localhost:5173" ||
+        origin === "http://127.0.0.1:5173" ||
+        origin.endsWith(".vercel.app") ||
+        origin.endsWith(".onrender.com") ||
+        origin.endsWith(".railway.app")
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+  })
+);
 
 // Serve static uploaded files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -1843,6 +1862,18 @@ app.get("/api/customer/eco-dashboard", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch eco dashboard statistics." });
   }
 });
+
+// Serve static frontend in production if dist/ exists
+const distPath = path.join(__dirname, "../dist");
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
+      return res.status(404).json({ error: "Endpoint not found" });
+    }
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
 
 // Start Express Server
 const server = app.listen(PORT, () => {
