@@ -929,7 +929,7 @@ async function initMysqlTables() {
       lat DOUBLE,
       lng DOUBLE,
       description TEXT,
-      imageUrl TEXT,
+      imageUrl LONGTEXT,
       moq INT DEFAULT 1,
       tierPrices TEXT,
       organic INT DEFAULT 0,
@@ -949,7 +949,7 @@ async function initMysqlTables() {
       treesEquivalent DOUBLE DEFAULT 0,
       rating DOUBLE DEFAULT 0,
       numReviews INT DEFAULT 0,
-      images TEXT,
+      images LONGTEXT,
       FOREIGN KEY(vendorId) REFERENCES users(id) ON DELETE CASCADE
     )`,
 
@@ -1263,6 +1263,18 @@ async function initMysqlTables() {
       await mysqlPool.query(alterSql);
     } catch {
       /* Ignore if column already exists */
+    }
+  }
+
+  const productMigrations = [
+    "ALTER TABLE products MODIFY imageUrl LONGTEXT",
+    "ALTER TABLE products MODIFY images LONGTEXT"
+  ];
+  for (const alterSql of productMigrations) {
+    try {
+      await mysqlPool.query(alterSql);
+    } catch {
+      /* Ignore */
     }
   }
 }

@@ -151,7 +151,7 @@ async function runMigration() {
       lat DOUBLE,
       lng DOUBLE,
       description TEXT,
-      imageUrl TEXT,
+      imageUrl LONGTEXT,
       moq INT DEFAULT 1,
       tierPrices TEXT,
       organic INT DEFAULT 0,
@@ -171,7 +171,7 @@ async function runMigration() {
       treesEquivalent DOUBLE DEFAULT 0,
       rating DOUBLE DEFAULT 0,
       numReviews INT DEFAULT 0,
-      images TEXT
+      images LONGTEXT
     )`,
     `CREATE TABLE IF NOT EXISTS orders (
       id VARCHAR(255) PRIMARY KEY,
@@ -258,6 +258,12 @@ async function runMigration() {
   for (const sql of tables) {
     await pool.query(sql);
   }
+
+  try {
+    await pool.query("ALTER TABLE products MODIFY imageUrl LONGTEXT");
+    await pool.query("ALTER TABLE products MODIFY images LONGTEXT");
+  } catch {}
+
   console.log("✅ All tables are ready.\n");
 
   // Helper function to insert or update
@@ -277,6 +283,13 @@ async function runMigration() {
     for (const item of items) {
       const values = cols.map((col) => {
         let val = item[col];
+        if (col === "stock") {
+          const parsed = parseInt(val, 10);
+          return isNaN(parsed) ? 0 : parsed;
+        }
+        if (col === "verifiedPurchase") {
+          return val ? 1 : 0;
+        }
         if (typeof val === "object" && val !== null) {
           return JSON.stringify(val);
         }
