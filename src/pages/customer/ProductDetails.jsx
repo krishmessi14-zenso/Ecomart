@@ -151,15 +151,6 @@ function ProductDetailsBase() {
       list = [{ color: null, colorHex: null, imageUrl: product.imageUrl }];
     }
 
-    // Default multi-image fallbacks for Bamboo Water Bottle if only 1 image provided
-    if ((String(product.id) === "p_sample_bamboo_bottle" || product.name?.toLowerCase().includes("bamboo water bottle")) && list.length <= 1) {
-      list = [
-        { color: "Natural Bamboo", colorHex: "#d4a373", imageUrl: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=1000" },
-        { color: "Stainless Steel Interior", colorHex: "#94a3b8", imageUrl: "https://images.unsplash.com/photo-1523362628745-0c100150b504?w=1000" },
-        { color: "Eco Matte Finish", colorHex: "#334155", imageUrl: "https://images.unsplash.com/photo-1589365278144-c9e705f843ba?w=1000" }
-      ];
-    }
-
     if (list.length === 0) {
       list = [{ color: null, colorHex: null, imageUrl: fallback }];
     }
@@ -195,41 +186,6 @@ function ProductDetailsBase() {
       } catch (e) {
         console.error("Failed to parse product.features", e);
       }
-    }
-
-    // Custom features for Water Bottle
-    if (
-      String(product.id) === "p_sample_bamboo_bottle" ||
-      product.name?.toLowerCase().includes("water bottle") ||
-      product.name?.toLowerCase().includes("bamboo bottle")
-    ) {
-      return [
-        {
-          icon: "🌡️",
-          title: "12-Hour Thermal Insulation",
-          description: "Double-walled vacuum interior keeps beverages ice-cold up to 24h or hot up to 12h.",
-        },
-        {
-          icon: "🌿",
-          title: "100% Organic Bamboo Casing",
-          description: "Handcrafted natural bamboo outer layer with smooth protective eco seal.",
-        },
-        {
-          icon: "🛡️",
-          title: "Food-Grade 304 Stainless Steel",
-          description: "100% BPA-free, toxin-free interior that leaves zero metallic aftertaste.",
-        },
-        {
-          icon: "💧",
-          title: "Leak-Proof Precision Lid",
-          description: "Ergonomic cap with silicone sealing ring ensures 100% spill-proof travel.",
-        },
-        {
-          icon: "📦",
-          title: "Zero-Plastic Packaging",
-          description: "Shipped in 100% recyclable, plastic-free biodegradable corrugated packaging.",
-        },
-      ];
     }
 
     // Fallback features derived from product properties

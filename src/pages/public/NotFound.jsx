@@ -56,7 +56,11 @@ function NotFoundBase() {
           {t("pageNotFoundMsg") || "The page you are looking for does not exist or has been moved."}
         </p>
         <Button variant="primary" full onClick={handleReturnHome}>
-          {role ? (role === "vendor" ? t("dashboard") : t("marketplace")) : t("getStarted")}
+          {role
+            ? role === "vendor"
+              ? t("navigation.dashboard") || "Dashboard"
+              : t("navigation.marketplace") || "Marketplace"
+            : t("getStarted") || "Get Started"}
         </Button>
       </div>
     </div>

@@ -33,6 +33,11 @@ const memoryStore = {
 
 let useMemoryStore = false;
 let mysqlPool = null;
+let dbMode = "starting";
+
+export function getDbMode() {
+  return dbMode;
+}
 
 // Persistent File Storage Helpers
 function loadMemoryStore() {
@@ -45,30 +50,7 @@ function loadMemoryStore() {
           memoryStore[key] = parsed[key];
         }
       });
-      if (!Array.isArray(memoryStore.offers) || memoryStore.offers.length === 0) {
-        const now = new Date();
-        const startIso = new Date(now.getTime() - 24 * 3600 * 1000).toISOString();
-        const endIso = new Date(now.getTime() + 30 * 24 * 3600 * 1000).toISOString();
-        memoryStore.offers = [
-          {
-            id: "off_seed_bamboo_20",
-            vendorId: "u_vend_bamboo_crafts",
-            title: "Festive Green Season Sale",
-            description: "Get 20% OFF on all Handcrafted Bamboo Water Bottles and Organic Totes!",
-            type: "percentage",
-            discountValue: 20,
-            productIds: JSON.stringify(["p_bamboo_bottle", "p_cotton_tote"]),
-            couponCode: "ECOSAVE20",
-            startDate: startIso,
-            endDate: endIso,
-            status: "approved",
-            rejectionReason: null,
-            createdAt: startIso,
-            updatedAt: startIso
-          }
-        ];
-        saveMemoryStore();
-      }
+      if (!Array.isArray(memoryStore.offers)) memoryStore.offers = [];
       console.log(
         `💾 EcoMart Persistent Data Store loaded: ${memoryStore.products.length} product(s), ${memoryStore.users.length} user(s), ${memoryStore.orders.length} order(s), ${memoryStore.offers.length} offer(s).`
       );
@@ -90,8 +72,9 @@ function saveMemoryStore() {
   }
 }
 
-// Promisified query interface export for MySQL / Persistent Store
-export const query = {
+let dbReady = Promise.resolve();
+
+const internalQuery = {
   all: async (sql, params = []) => {
     if (!useMemoryStore && mysqlPool) {
       const [rows] = await mysqlPool.query(sql, params);
@@ -116,6 +99,21 @@ export const query = {
   }
 };
 
+export const query = {
+  all: async (sql, params = []) => {
+    await dbReady;
+    return internalQuery.all(sql, params);
+  },
+  get: async (sql, params = []) => {
+    await dbReady;
+    return internalQuery.get(sql, params);
+  },
+  run: async (sql, params = []) => {
+    await dbReady;
+    return internalQuery.run(sql, params);
+  }
+};
+
 // In-Memory & Persistent File SQL Query Executor
 function runMemoryQueryAll(sql, params) {
   const cleanSql = sql.trim().toLowerCase();
@@ -130,7 +128,7 @@ function runMemoryQueryAll(sql, params) {
         const uEmail = String(u.email || "").toLowerCase();
         return uEmail === email || uEmail === altEmail;
       });
-    } else if (cleanSql.includes("id = ?")) {
+    } else if (/(^|[^a-z])id = \?/.test(cleanSql)) {
       list = list.filter((u) => u.id === params[0]);
     } else if (cleanSql.includes("role = 'admin'")) {
       list = list.filter((u) => u.role === "admin");
@@ -160,7 +158,7 @@ function runMemoryQueryAll(sql, params) {
       const minScore = Number(params[0] || 0);
       list = list.filter((p) => (p.ecoScore || 0) > minScore);
     }
-    if (cleanSql.includes("id = ?")) {
+    if (/(^|[^a-z])id = \?/.test(cleanSql)) {
       list = list.filter((p) => p.id === params[0]);
     }
     if (cleanSql.includes("order by ecoscore desc")) {
@@ -232,7 +230,7 @@ function runMemoryQueryAll(sql, params) {
 
   if (cleanSql.includes("from orders")) {
     let list = [...memoryStore.orders];
-    if (cleanSql.includes("id = ?")) {
+    if (/(^|[^a-z])id = \?/.test(cleanSql)) {
       const targetId = params[params.length - 1] || params[0];
       list = list.filter((o) => o.id === targetId);
     } else if (cleanSql.includes("customerid = ?")) {
@@ -299,7 +297,7 @@ function runMemoryQueryAll(sql, params) {
     if (cleanSql.includes("vendorid = ?")) {
       list = list.filter((o) => String(o.vendorId) === String(params[0]));
     }
-    if (cleanSql.includes("id = ?")) {
+    if (/(^|[^a-z])id = \?/.test(cleanSql)) {
       list = list.filter((o) => String(o.id) === String(params[0]));
     }
     if (cleanSql.includes("couponcode = ?")) {
@@ -565,13 +563,24 @@ function runMemoryQueryRun(sql, params) {
       customerName: params[4],
       rating: params[5],
       comment: params[6],
-      verifiedPurchase: params[7] || 0,
-      status: params[8] || "Approved",
-      createdAt: params[9] || new Date().toISOString()
+      imageUrl: params[7] || null,
+      verifiedPurchase: params[8] !== undefined ? params[8] : 1,
+      status: params[9] || "Approved",
+      createdAt: params[10] || new Date().toISOString()
     };
-    memoryStore.reviews.push(rev);
+    if (!memoryStore.reviews) memoryStore.reviews = [];
+    memoryStore.reviews.unshift(rev);
     saveMemoryStore();
     return { lastID: rev.id, changes: 1 };
+  }
+
+  if (cleanSql.startsWith("delete from reviews")) {
+    const targetId = params[0];
+    if (memoryStore.reviews) {
+      memoryStore.reviews = memoryStore.reviews.filter((r) => r.id !== targetId);
+    }
+    saveMemoryStore();
+    return { lastID: targetId, changes: 1 };
   }
 
   if (cleanSql.startsWith("delete from email_otps")) {
@@ -619,11 +628,23 @@ function runMemoryQueryRun(sql, params) {
     if (!memoryStore.offers) memoryStore.offers = [];
     const offer = memoryStore.offers.find((o) => o.id === offerId);
     if (offer) {
-      if (cleanSql.includes("status = ?")) {
+      const canonicalMap = {
+        status: "status",
+        rejectionreason: "rejectionReason",
+        title: "title",
+        description: "description",
+        type: "type",
+        discountvalue: "discountValue",
+        productids: "productIds",
+        couponcode: "couponCode",
+        startdate: "startDate",
+        enddate: "endDate",
+        updatedat: "updatedAt"
+      };
+
+      if (cleanSql.includes("status = ?") && cleanSql.includes("rejectionreason = ?")) {
         offer.status = params[0];
-        if (cleanSql.includes("rejectionreason = ?")) {
-          offer.rejectionReason = params[1];
-        }
+        offer.rejectionReason = params[1] === "NULL" || params[1] === "null" ? null : params[1];
       } else {
         const setClauseMatch = cleanSql.match(/update offers set (.*?) where/i);
         if (setClauseMatch) {
@@ -632,15 +653,25 @@ function runMemoryQueryRun(sql, params) {
           for (const assign of assignments) {
             const parts = assign.trim().split("=");
             if (parts.length === 2) {
-              const field = parts[0].trim().replace(/`/g, "");
-              const isPlaceholder = parts[1].trim() === "?";
-              const val = isPlaceholder ? params[paramIdx++] : parts[1].trim().replace(/'/g, "");
-              const camelField = field.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-              offer[camelField] = val;
+              const rawField = parts[0].trim().replace(/`/g, "");
+              const canonicalField = canonicalMap[rawField.toLowerCase()] || rawField;
+              const rightPart = parts[1].trim();
+              let val;
+              if (rightPart === "?") {
+                val = params[paramIdx++];
+              } else {
+                const unquoted = rightPart.replace(/'/g, "");
+                val = unquoted.toUpperCase() === "NULL" ? null : unquoted;
+              }
+              if (typeof val === "string" && val.toUpperCase() === "NULL") {
+                val = null;
+              }
+              offer[canonicalField] = val;
             }
           }
         }
       }
+      delete offer.rejectionreason;
       offer.updatedAt = new Date().toISOString();
     }
     saveMemoryStore();
@@ -728,17 +759,19 @@ async function initDatabase() {
   if (dbType === "file" || dbType === "json" || dbType === "memory" || dbType === "store") {
     console.log("🌱 EcoMart Persistent Data Store Engine activated (Standalone File Mode).");
     useMemoryStore = true;
+    dbMode = "json-file";
     const hasData = loadMemoryStore();
     await seedData(hasData);
     return;
   }
 
-  const maxRetries = 5;
+  const maxRetries = 4;
   let connected = false;
+  let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const tempConnection = await mysql.createConnection({ host, port, user, password, connectTimeout: 3000 });
+      const tempConnection = await mysql.createConnection({ host, port, user, password, connectTimeout: 2000 });
       await tempConnection.query(`CREATE DATABASE IF NOT EXISTS \`${databaseName}\``);
       await tempConnection.end();
 
@@ -753,22 +786,46 @@ async function initDatabase() {
         queueLimit: 0
       });
 
-      console.log(`✅ Connected to MySQL database '${databaseName}' successfully.`);
-      await initMysqlTables();
-      await seedData(false);
+      await mysqlPool.query("SELECT 1");
       connected = true;
       break;
     } catch (err) {
+      lastError = err;
+      if (err.code === "ER_ACCESS_DENIED_ERROR") {
+        console.error("Wrong DB_USER / DB_PASSWORD in .env");
+        break;
+      }
       if (attempt < maxRetries) {
-        console.log(`⚠️ MySQL connection attempt ${attempt}/${maxRetries} failed (${err.code || err.message}). Retrying in 2 seconds...`);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        console.log(`⚠️ MySQL connection attempt ${attempt}/${maxRetries} failed (${err.code || err.message}). Retrying in 1.5 seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     }
   }
 
+  if (connected && mysqlPool) {
+    try {
+      await initMysqlTables();
+      await seedData(false);
+      useMemoryStore = false;
+      dbMode = "mysql";
+      console.log(`✅ Connected to MySQL database '${databaseName}' successfully.`);
+    } catch (setupErr) {
+      const reason = setupErr.sqlMessage || setupErr.message || String(setupErr);
+      console.error("❌ MySQL table initialization or seeding error:", reason);
+      if (mysqlPool) {
+        try { await mysqlPool.end(); } catch {}
+      }
+      mysqlPool = null;
+      connected = false;
+      console.warn(`⚠️ MySQL table setup failed (${reason}). Falling back to JSON persistent store mode.`);
+    }
+  }
+
   if (!connected) {
-    console.warn("⚠️ MySQL is unreachable. Falling back to JSON persistent store mode. MySQL database data will not be shown.");
+    const reason = lastError ? (lastError.sqlMessage || lastError.message || String(lastError)) : "Unreachable";
+    console.warn(`⚠️ MySQL is unreachable (${reason}). Falling back to JSON persistent store mode. MySQL database data will not be shown.`);
     useMemoryStore = true;
+    dbMode = "json-file";
     const hasData = loadMemoryStore();
     await seedData(hasData);
   }
@@ -927,6 +984,7 @@ async function initMysqlTables() {
       customerName VARCHAR(255),
       rating INT,
       comment TEXT,
+      imageUrl TEXT,
       verifiedPurchase INT DEFAULT 0,
       status VARCHAR(50) DEFAULT 'Approved',
       createdAt VARCHAR(100),
@@ -1187,37 +1245,27 @@ async function seedData(hasLoadedData = false) {
     if (Array.isArray(memoryStore.products)) {
       memoryStore.products.forEach((p) => {
         if (typeof p.ecoScore !== "number" || isNaN(p.ecoScore) || p.ecoScore < 10) {
-          p.ecoScore = p.id === "p_sample_bamboo_bottle" ? 94 : p.id === "p_sample_jute_tote" ? 90 : 88;
+          p.ecoScore = 50;
         }
       });
     }
 
-    const row = await query.get("SELECT COUNT(*) as count FROM users");
+    const row = await internalQuery.get("SELECT COUNT(*) as count FROM users");
     const count = row ? Number(row.count) : 0;
     if (count === 0) {
       console.log("Seeding EcoMart Admin account...");
       const adminEmail = process.env.ADMIN_EMAIL || "admin@ecomart.com";
       const adminPassword = process.env.ADMIN_PASSWORD || "Admin@12345";
 
-      await query.run(
+      await internalQuery.run(
         `INSERT INTO users (id, email, password, role, name, storeName, countryCode, countryName, region, district, city, postalCode, lat, lng, currency, verificationStatus, about, rating, completedOrders, greenPoints, createdAt)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ["a1", adminEmail, adminPassword, "admin", "EcoMart Admin", null, "IN", "India", null, null, null, null, null, null, "INR", "Verified", "EcoMart Platform Administration Account.", 5.0, 0, 0, new Date().toISOString()]
       );
-      console.log(`✅ Admin account created: ${adminEmail} / ${adminPassword}`);
+      console.log(`✅ Admin account created: ${adminEmail}`);
     }
 
-    const userRow = await query.get("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", ["krishmessi91@gmail.com"]);
-    if (!userRow) {
-      await query.run(
-        `INSERT INTO users (id, email, password, role, name, storeName, countryCode, countryName, region, district, city, postalCode, lat, lng, currency, verificationStatus, about, rating, completedOrders, greenPoints, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ["u_krishmessi91", "krishmessi91@gmail.com", "krishna", "customer", "krishna", null, "IN", "India", null, null, null, null, null, null, "INR", "Verified", "Customer Account", 5.0, 0, 0, new Date().toISOString()]
-      );
-      console.log("✅ Seeded customer account: krishmessi91@gmail.com / krishna");
-    }
-
-    const couponRow = await query.get("SELECT COUNT(*) as count FROM coupons");
+    const couponRow = await internalQuery.get("SELECT COUNT(*) as count FROM coupons");
     const couponCount = couponRow ? Number(couponRow.count) : 0;
     if (couponCount === 0) {
       const coupons = [
@@ -1226,57 +1274,10 @@ async function seedData(hasLoadedData = false) {
         ["c3", "FREESHIPECO", "Free Carbon-Neutral Delivery", 100, 50, "2026-01-01T00:00:00.000Z"]
       ];
       for (const c of coupons) {
-        await query.run(
+        await internalQuery.run(
           `INSERT INTO coupons (id, code, description, discountPercentage, pointsRequired, isActive, createdAt)
            VALUES (?, ?, ?, ?, ?, 1, ?)`,
           c
-        );
-      }
-    }
-
-    // Seed single sample vendor if not exists
-    const vendorRow = await query.get("SELECT id FROM users WHERE id = ?", ["v_sample_vendor"]);
-    if (!vendorRow) {
-      const createdAt = new Date().toISOString();
-      await query.run(
-        `INSERT INTO users (id, email, password, role, name, storeName, countryCode, countryName, region, district, city, lat, lng, currency, verificationStatus, about, rating, completedOrders, greenPoints, createdAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          "v_sample_vendor",
-          "vendor.sample@ecomart.com",
-          "Vendor@123",
-          "vendor",
-          "EcoCraft Studio",
-          "EcoCraft Sustainable Living",
-          "IN",
-          "India",
-          "Karnataka",
-          "Bengaluru Urban",
-          "Bengaluru",
-          12.9716,
-          77.5946,
-          "INR",
-          "Verified",
-          "Artisanal eco-friendly studio producing sustainable daily-use goods and plastic-free alternatives.",
-          4.9,
-          15,
-          0,
-          createdAt
-        ]
-      );
-      console.log("✅ Seeded sample vendor: EcoCraft Studio (vendor.sample@ecomart.com / Verified)");
-    }
-
-    // Seed default sample products if no products exist yet
-    const prodCountRow = await query.get("SELECT COUNT(*) as count FROM products");
-    const prodCount = prodCountRow ? Number(prodCountRow.count) : 0;
-    if (prodCount === 0) {
-      const defaultProducts = [];
-      for (const p of defaultProducts) {
-        await query.run(
-          `INSERT INTO products (id, name, category, grade, price, currency, unit, stock, vendorId, countryCode, region, district, city, lat, lng, description, imageUrl, images, moq, tierPrices, organic, harvestDate, createdAt, status, materialType, packagingType, recyclability, isRenewableEnergy, lifespanYears, ecoScore, co2SavedKg, plasticSavedKg, waterSavedLiters, treesEquivalent)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          p
         );
       }
     }
@@ -1291,6 +1292,6 @@ async function seedData(hasLoadedData = false) {
 }
 
 // Start database initialization
-initDatabase();
+dbReady = initDatabase();
 
 export default { isMysql: () => !useMemoryStore };

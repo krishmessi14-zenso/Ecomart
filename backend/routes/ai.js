@@ -1,6 +1,7 @@
 import express from "express";
 import jwt from "jsonwebtoken";
 import { processAiChat } from "../services/aiService.js";
+import { explainEcoScore } from "../services/aiTools.js";
 
 const router = express.Router();
 
@@ -80,6 +81,25 @@ router.post("/ai/chat", extractOptionalUser, async (req, res) => {
       reply: "I am having trouble processing your request at the moment. How else can I help you navigate EcoMart?",
       language: selectedLanguage || "English"
     });
+  }
+});
+
+// POST /api/ai/product-explain - Product EcoScore Explanation Endpoint
+router.post("/product-explain", async (req, res) => {
+  try {
+    const { productId } = req.body;
+    if (!productId) {
+      return res.status(404).json({ error: "Product ID is required." });
+    }
+    const result = await explainEcoScore({ productId });
+    if (result.error) {
+      return res.status(404).json({ error: result.error });
+    }
+    const { explanation, ecoScore, productName } = result;
+    res.json({ explanation, ecoScore, productName });
+  } catch (err) {
+    console.error("Product explain endpoint error:", err);
+    res.status(500).json({ error: "Failed to explain product EcoScore." });
   }
 });
 

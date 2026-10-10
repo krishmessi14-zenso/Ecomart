@@ -60,7 +60,7 @@ router.post("/", authenticateToken, handleMulterUpload, async (req, res) => {
     if (apiKey && apiKey.length > 10) {
       try {
         const ai = new GoogleGenAI({ apiKey });
-        const candidateModels = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
+        const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"];
 
         const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Gemini scan timed out after 15s")), 15000)
@@ -185,7 +185,7 @@ router.post("/choose-alternative", authenticateToken, async (req, res) => {
       [
         scanRecordId,
         userId,
-        "/uploads/scans/sample.jpg",
+        "",
         productName,
         "Eco-Swapped",
         "Plastic-Free Alternative",
@@ -195,7 +195,7 @@ router.post("/choose-alternative", authenticateToken, async (req, res) => {
         `${co2Kg}kg CO2`,
         95,
         `Switched to eco-friendly product alternative. Saved ${plasticGrams}g plastic and ${co2Kg}kg CO2.`,
-        chosenProductId || "p_sample_bamboo_bottle",
+        chosenProductId || "",
         nowIso
       ]
     );

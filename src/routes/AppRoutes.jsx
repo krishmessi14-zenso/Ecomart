@@ -211,6 +211,7 @@ export default function AppRoutes() {
         <Route path="customers" element={<AdminDashboard />} />
         <Route path="products" element={<AdminDashboard />} />
         <Route path="orders" element={<AdminDashboard />} />
+        <Route path="reviews" element={<AdminDashboard />} />
         <Route path="offers" element={<OfferApprovals />} />
         <Route path="profile" element={<ProfileSettings />} />
       </Route>

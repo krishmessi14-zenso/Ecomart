@@ -20,6 +20,7 @@ import { useAuth } from "../../hooks/useAuth.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
 import { useNotifications } from "../../hooks/useNotifications.js";
 import { GlobalLocationSelector } from "../../components/common/GlobalLocationSelector.jsx";
+import { apiFetch } from "../../services/api.js";
 
 const initialCheckoutState = {
   form: {
@@ -83,6 +84,7 @@ function CheckoutBase() {
   const [pendingOrderId, setPendingOrderId] = useState(null);
 
   const [isChangingAddress, setIsChangingAddress] = useState(false);
+  const [saveAddressToProfile, setSaveAddressToProfile] = useState(true);
 
   const [deliveryLocation, setDeliveryLocation] = useState(() => ({
     countryCode: currentUser?.countryCode || "IN",
@@ -211,14 +213,16 @@ function CheckoutBase() {
       return;
     }
 
-    // Auto-save address to user profile so customer never has to enter it again
-    if (currentUser?.id && updateProfile) {
+    const updatedAddressStr = (deliveryLocation.address || form.address || "").trim();
+
+    // Auto-save new address to user profile when checkbox is enabled
+    if (saveAddressToProfile && currentUser?.id && updateProfile) {
       try {
         await updateProfile(currentUser.id, {
           name: form.fullName.trim(),
           phone: form.phone ? form.phone.trim() : null,
-          address: (deliveryLocation.address || form.address || "").trim(),
-          formattedAddress: (deliveryLocation.address || form.address || "").trim(),
+          address: updatedAddressStr,
+          formattedAddress: updatedAddressStr,
           city: (deliveryLocation.city || "").trim(),
           district: (deliveryLocation.district || "").trim(),
           region: (deliveryLocation.region || "").trim(),
@@ -229,11 +233,14 @@ function CheckoutBase() {
           lng: deliveryLocation.lng || null,
           currency: deliveryLocation.currency || "INR"
         });
+        notifySuccess("New delivery address saved to your profile for future orders!");
       } catch (err) {
-        console.warn("Background profile address update:", err);
+        console.warn("Background profile address update error:", err);
       }
     }
 
+    dispatch({ type: "SET_FIELD", field: "address", value: updatedAddressStr });
+    setIsChangingAddress(false);
     setStep(2);
   };
 
@@ -340,7 +347,7 @@ function CheckoutBase() {
       setProcessingStatusText("Initializing Razorpay Secure Gateway...");
 
       // 2. Request backend to create a real Razorpay order using official SDK
-      const razorpayOrderRes = await fetch("/api/payments/create-razorpay-order", {
+      const razorpayOrderRes = await apiFetch("/api/payments/create-razorpay-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId: ecoMartOrder.id }),
@@ -379,7 +386,7 @@ function CheckoutBase() {
           setProcessingStatusText("Verifying payment signature...");
           try {
             // Send real payment verification values to backend
-            const verifyRes = await fetch("/api/payments/verify-razorpay-payment", {
+            const verifyRes = await apiFetch("/api/payments/verify-razorpay-payment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -431,7 +438,7 @@ function CheckoutBase() {
             setProcessingStatusText("");
 
             try {
-              await fetch("/api/payments/cancel-razorpay-payment", {
+              await apiFetch("/api/payments/cancel-razorpay-payment", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ orderId: ecoMartOrder.id, reason: "Razorpay modal dismissed" })
@@ -728,6 +735,34 @@ function CheckoutBase() {
                         onChange={(newLoc) => setDeliveryLocation(newLoc)}
                         showAddressFields={true}
                       />
+                    </div>
+
+                    <div style={{ marginTop: 14, padding: "12px 16px", background: "var(--bg-soft)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          cursor: "pointer",
+                          fontSize: 13.5,
+                          fontWeight: 600,
+                          color: "var(--text)",
+                          userSelect: "none"
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={saveAddressToProfile}
+                          onChange={(e) => setSaveAddressToProfile(e.target.checked)}
+                          style={{
+                            width: 18,
+                            height: 18,
+                            accentColor: "var(--brand)",
+                            cursor: "pointer"
+                          }}
+                        />
+                        <span>💾 Save and update this new address in my profile for future orders</span>
+                      </label>
                     </div>
                   </>
                 )}

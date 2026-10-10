@@ -43,7 +43,13 @@ export function LanguageProvider({ children }) {
 
       // 1. Try i18next first
       if (i18n.exists(key)) {
-        return i18n.t(key);
+        const i18nVal = i18n.t(key, { returnObjects: false });
+        if (
+          typeof i18nVal === "string" &&
+          !i18nVal.includes("returned an object instead of string")
+        ) {
+          return i18nVal;
+        }
       }
 
       // 2. Try nested keys in translations dictionary (e.g. "common.save")

@@ -559,7 +559,7 @@ function EcoMartAiBotBase({ contextProductId = null }) {
                         product={prod}
                         onNavigateProduct={(id) => {
                           setIsOpen(false);
-                          navigate(`/customer/product/${id}`);
+                          navigate(`/customer/products/${id}`);
                         }}
                       />
                     ))}

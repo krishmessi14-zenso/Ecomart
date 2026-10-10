@@ -29,7 +29,9 @@ const STATUS_FILTERS = [
   "Preparing",
   "Packed",
   "Ready for Pickup",
+  "Picked Up",
   "In Transit",
+  "Out for Delivery",
   "Delivered",
   "Cancelled by Customer",
   "Rejected by Vendor"
@@ -43,7 +45,10 @@ const STAGE_PROGRESSION = {
   "Accepted": { next: "Preparing", label: "Start Preparing" },
   "Preparing": { next: "Packed", label: "Pack Order" },
   "Packed": { next: "Ready for Pickup", label: "Ready for Pickup" },
-  "Ready for Pickup": { next: "Picked Up", label: "Mark Picked Up" }
+  "Ready for Pickup": { next: "Picked Up", label: "Mark Picked Up" },
+  "Picked Up": { next: "In Transit", label: "Ship / In Transit" },
+  "In Transit": { next: "Out for Delivery", label: "Out for Delivery" },
+  "Out for Delivery": { next: "Delivered", label: "Mark Delivered" }
 };
 
 const CATEGORY_FALLBACKS = {

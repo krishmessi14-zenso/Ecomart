@@ -20,6 +20,7 @@ export const Sun = ({ size = 17 }) => (<svg {...base(size)}><circle cx="12" cy="
 export const Moon = ({ size = 17 }) => (<svg {...base(size)}><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" /></svg>);
 export const Globe = ({ size = 17 }) => (<svg {...base(size)}><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z" /></svg>);
 export const ChevronDown = ({ size = 14 }) => (<svg {...base(size)}><path d="m6 9 6 6 6-6" /></svg>);
+export const ChevronUp = ({ size = 14 }) => (<svg {...base(size)}><path d="m18 15-6-6-6 6" /></svg>);
 export const Menu = ({ size = 20 }) => (<svg {...base(size)}><path d="M4 6h16M4 12h16M4 18h16" /></svg>);
 export const Package = ({ size = 18 }) => (<svg {...base(size)}><path d="m7.5 4.27 9 5.15" /><path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8Z" /><path d="M3.3 7 12 12l8.7-5M12 22V12" /></svg>);
 export const TrendingUp = ({ size = 16 }) => (<svg {...base(size)}><path d="m22 7-8.5 8.5-5-5L2 17" /><path d="M16 7h6v6" /></svg>);

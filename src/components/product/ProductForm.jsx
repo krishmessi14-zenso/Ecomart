@@ -5,57 +5,7 @@ import { CATEGORIES, GRADES, UNITS, MATERIAL_TYPES, PACKAGING_TYPES, calculateEc
 import { validateProductForm } from "../../utils/validators.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
 
-const SAMPLE_GALLERIES = {
-  "Reusable & Household": [
-    "https://images.unsplash.com/photo-1610701596007-11502861dcfa?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1544816155-12df9643f363?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1585842378054-ee2e52f94ba2?w=600&auto=format&fit=crop&q=80"
-  ],
-  "Personal Care & Hygiene": [
-    "https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1571781926291-c477ebfd024b?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1563178406-4cdc2923acbc?w=600&auto=format&fit=crop&q=80"
-  ],
-  "Organic Food & Beverage": [
-    "https://images.unsplash.com/photo-1610348725531-843dff563e2c?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1564834724105-918b73d1b9e0?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1518843875459-f738682238a6?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1590779033100-9f60a05a013d?w=600&auto=format&fit=crop&q=80"
-  ],
-  "Recycled Stationery": [
-    "https://images.unsplash.com/photo-1519669556878-63bdad8a1a49?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1586075010923-2dd4570fb338?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1544816155-12df9643f363?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=600&auto=format&fit=crop&q=80"
-  ],
-  "Solar & Green Tech": [
-    "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?w=600&auto=format&fit=crop&q=80"
-  ],
-  "Biodegradable Packaging": [
-    "https://images.unsplash.com/photo-1607166452427-7e4477079cb9?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1530587191325-3db32d826c18?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1532992001885-450c17969972?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1610701596007-11502861dcfa?w=600&auto=format&fit=crop&q=80"
-  ],
-  "Sustainable Apparel": [
-    "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1562157873-818bc0726f68?w=600&auto=format&fit=crop&q=80",
-    "https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=600&auto=format&fit=crop&q=80"
-  ]
-};
+
 
 const EMPTY = {
   name: "",
@@ -239,12 +189,7 @@ function ProductFormBase({ initialValue, onSubmit, onCancel }) {
     });
   }, []);
 
-  // Auto-Fill 5 Sample Eco Photos suited for selected category
-  const handleFillCategorySamples = useCallback(() => {
-    const cat = form.category || "Reusable & Household";
-    const samples = SAMPLE_GALLERIES[cat] || SAMPLE_GALLERIES["Reusable & Household"];
-    setImagesList([...samples]);
-  }, [form.category]);
+
 
 
 
@@ -384,19 +329,8 @@ function ProductFormBase({ initialValue, onSubmit, onCancel }) {
               🖼️ Product Image Gallery (Up to 5 Photos)
             </strong>
             <span className="fc-soft" style={{ fontSize: "11px", display: "block" }}>
-              Upload local photos or generate sample studio photos.
+              Upload up to 5 photos of your product.
             </span>
-          </div>
-
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button
-              type="button"
-              className="fc-btn fc-btn-xs fc-btn-outline"
-              onClick={handleFillCategorySamples}
-              style={{ fontSize: "11px", display: "flex", alignItems: "center", gap: "4px" }}
-            >
-              ✨ Auto-Fill 5 Eco Samples
-            </button>
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, memo } from "react";
+import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   StatCard,
@@ -23,6 +23,7 @@ import { useData } from "../../hooks/useData.js";
 import { useAuth } from "../../hooks/useAuth.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
 import { useNotifications } from "../../hooks/useNotifications.js";
+import { apiFetch } from "../../services/api.js";
 
 function VendorDashboardBase() {
   const { t, lang } = useLanguage();
@@ -61,6 +62,25 @@ function VendorDashboardBase() {
   const { user } = useAuth();
   const currentVendorId = vendorProfile?.id || user?.id;
 
+  const [vendorReviews, setVendorReviews] = useState([]);
+
+  const fetchVendorReviews = useCallback(async () => {
+    if (!currentVendorId) return;
+    try {
+      const res = await apiFetch(`/api/reviews?vendorId=${currentVendorId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setVendorReviews(data);
+      }
+    } catch (err) {
+      console.error("Failed to load vendor reviews:", err);
+    }
+  }, [currentVendorId]);
+
+  useEffect(() => {
+    fetchVendorReviews();
+  }, [fetchVendorReviews]);
+
   const myProducts = useMemo(
     () => products.filter((p) => p.vendorId && currentVendorId && String(p.vendorId) === String(currentVendorId)),
     [products, currentVendorId]
@@ -68,6 +88,11 @@ function VendorDashboardBase() {
   const myOrders = useMemo(
     () => orders.filter((o) => o.vendorId && currentVendorId && String(o.vendorId) === String(currentVendorId)),
     [orders, currentVendorId]
+  );
+
+  const getProductName = useCallback(
+    (id) => products.find((p) => String(p.id) === String(id))?.name || "Product",
+    [products]
   );
 
   const revenue = useMemo(
@@ -508,6 +533,69 @@ function VendorDashboardBase() {
           </div>
         </Card>
       </div>
+
+      {/* Customer Reviews for Vendor Products */}
+      <Card style={{ padding: "20px", marginBottom: "24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h3 className="fc-h3" style={{ margin: 0 }}>
+            💬 Customer Product Reviews ({vendorReviews.length})
+          </h3>
+          <span className="fc-soft" style={{ fontSize: 12, fontWeight: 600 }}>
+            Completed reviews for your product listings
+          </span>
+        </div>
+
+        {vendorReviews.length === 0 ? (
+          <p className="fc-soft" style={{ fontStyle: "italic", textAlign: "center", padding: "24px 0", margin: 0 }}>
+            No customer reviews posted for your products yet. Delivered orders will prompt buyers to write reviews.
+          </p>
+        ) : (
+          <div className="fc-table-wrap">
+            <table className="fc-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Customer Name</th>
+                  <th>Product</th>
+                  <th>Rating</th>
+                  <th>Written Review Comment</th>
+                  <th>Attached Image</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vendorReviews.map((r) => (
+                  <tr key={r.id}>
+                    <td>{formatDate(r.createdAt)}</td>
+                    <td><strong>{r.customerName || "Verified Purchaser"}</strong></td>
+                    <td><strong>{getProductName(r.productId)}</strong></td>
+                    <td>
+                      <div style={{ color: "#f59e0b", fontWeight: 700 }}>
+                        ★ {r.rating}/5
+                      </div>
+                    </td>
+                    <td style={{ fontSize: 12.5, maxWidth: 300, wordBreak: "break-word" }}>
+                      {r.comment}
+                    </td>
+                    <td>
+                      {r.imageUrl ? (
+                        <a href={r.imageUrl} target="_blank" rel="noopener noreferrer">
+                          <img
+                            src={r.imageUrl}
+                            alt="Review thumbnail"
+                            style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover", border: "1px solid var(--border)" }}
+                          />
+                        </a>
+                      ) : (
+                        <span className="fc-soft" style={{ fontSize: 11 }}>No Image</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {/* Floating / Bottom Quick Actions Bar */}
       <Card style={{ padding: "18px 24px", background: "var(--surface)" }}>

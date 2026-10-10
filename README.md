@@ -142,8 +142,6 @@ EcoMart/
 │   ├── pages/             # Admin, Vendor, Customer, and Public views
 │   ├── routes/            # Protected & guarded application routes
 │   └── services/          # Centralized API HTTP client (api.js)
-├── scratch/
-│   └── run_all_tests.js   # Automated Node.js integration test runner
 ├── AUDIT_REPORT.md        # Detailed full-stack audit and bug remediation report
 └── package.json           # Application manifest and npm scripts
 ```

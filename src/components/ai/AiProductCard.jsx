@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { useCart } from "../../hooks/useCart";
+import { getProductImage } from "../../utils/constants.js";
 
 export function AiProductCard({ product, onNavigateProduct }) {
   const { addToCart } = useCart();
   const [added, setAdded] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   if (!product) return null;
+
+  const displayImg = imageError ? getProductImage(null) : getProductImage(product);
 
   const handleAddToCart = (e) => {
     e.stopPropagation();
@@ -32,8 +36,9 @@ export function AiProductCard({ product, onNavigateProduct }) {
       }}
     >
       <img
-        src={product.imageUrl || "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=300"}
+        src={displayImg}
         alt={product.name}
+        onError={() => setImageError(true)}
         style={{
           width: "48px",
           height: "48px",

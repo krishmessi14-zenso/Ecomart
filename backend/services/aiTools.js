@@ -32,7 +32,7 @@ export async function getProductCount() {
 // 2. Search products by query, category, maxPrice (max 5 items, plain JSON)
 export async function searchProducts({ query: queryText = "", category = "", maxPrice = null }) {
   try {
-    let sql = "SELECT id, name, category, price, currency, stock, ecoScore, materialType, packagingType, description FROM products WHERE status = 'approved'";
+    let sql = "SELECT id, name, category, price, currency, stock, ecoScore, materialType, packagingType, description, imageUrl FROM products WHERE status = 'approved'";
     const params = [];
 
     if (queryText && String(queryText).trim()) {
@@ -61,7 +61,8 @@ export async function searchProducts({ query: queryText = "", category = "", max
       currency: String(p.currency || "INR"),
       stock: Number(p.stock || 0),
       ecoScore: Number(p.ecoScore || 0),
-      materialType: String(p.materialType || "")
+      materialType: String(p.materialType || ""),
+      imageUrl: String(p.imageUrl || "")
     }));
     return { products };
   } catch (err) {
@@ -74,7 +75,7 @@ export async function searchProducts({ query: queryText = "", category = "", max
 export async function getEcoFriendlyProducts() {
   try {
     const rawProducts = await query.all(
-      "SELECT id, name, category, price, ecoScore, materialType, packagingType, co2SavedKg, plasticSavedKg FROM products WHERE status = 'approved' ORDER BY ecoScore DESC LIMIT 5"
+      "SELECT id, name, category, price, ecoScore, materialType, packagingType, co2SavedKg, plasticSavedKg, imageUrl FROM products WHERE status = 'approved' ORDER BY ecoScore DESC LIMIT 5"
     );
     const products = (rawProducts || []).map(p => ({
       id: String(p.id),
@@ -84,7 +85,8 @@ export async function getEcoFriendlyProducts() {
       ecoScore: Number(p.ecoScore || 0),
       materialType: String(p.materialType || ""),
       co2SavedKg: Number(p.co2SavedKg || 0),
-      plasticSavedKg: Number(p.plasticSavedKg || 0)
+      plasticSavedKg: Number(p.plasticSavedKg || 0),
+      imageUrl: String(p.imageUrl || "")
     }));
     return { products };
   } catch (err) {
@@ -111,7 +113,8 @@ export async function getProductDetails({ id }) {
         ecoScore: Number(product.ecoScore || 0),
         stock: Number(product.stock || 0),
         materialType: String(product.materialType || ""),
-        description: String(product.description || "")
+        description: String(product.description || ""),
+        imageUrl: String(product.imageUrl || "")
       }
     };
   } catch (err) {

@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { query } from "./database.js";
+import { query, getDbMode } from "./database.js";
 import {
   getCountries,
   getRegions,
@@ -51,7 +51,7 @@ app.use("/api", apiRateLimiter);
 
 // Health Check Endpoint
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", service: "EcoMart Backend API", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", service: "EcoMart Backend API", database: getDbMode(), timestamp: new Date().toISOString() });
 });
 
 // Mount Routers
@@ -437,7 +437,10 @@ async function handleCreateProduct(req, res) {
     lifespanYears
   } = req.body;
 
-  const resolvedVendorId = vendorId || (req.user ? req.user.id : "v_sample_vendor_1");
+  const resolvedVendorId = (req.user && req.user.role === "vendor") ? req.user.id : vendorId;
+  if (!resolvedVendorId) {
+    return res.status(401).json({ error: "Please log in as a vendor to add products." });
+  }
   const resolvedUnit = unit || "piece";
 
   if (!name || !category || price === undefined || price === null || stock === undefined || stock === null) {
@@ -1666,6 +1669,91 @@ app.post("/api/coupons/:id/redeem", authenticateToken, async (req, res) => {
   }
 });
 
+// ---------------- REVIEWS API ROUTES ----------------
+
+// GET /api/reviews - Get reviews (all, or filtered by productId or vendorId)
+app.get("/api/reviews", async (req, res) => {
+  const { productId, vendorId } = req.query;
+  try {
+    let sql = "SELECT * FROM reviews";
+    let params = [];
+    if (productId) {
+      sql += " WHERE productId = ?";
+      params.push(productId);
+    } else if (vendorId) {
+      sql += " WHERE vendorId = ?";
+      params.push(vendorId);
+    }
+    sql += " ORDER BY createdAt DESC";
+    const reviews = await query.all(sql, params);
+    res.json(reviews);
+  } catch (err) {
+    console.error("Fetch reviews error:", err);
+    res.status(500).json({ error: "Failed to fetch reviews." });
+  }
+});
+
+// POST /api/reviews - Submit a product review (written comment required, image optional)
+app.post("/api/reviews", async (req, res) => {
+  const { productId, vendorId, customerId, customerName, rating, comment, imageUrl } = req.body;
+
+  if (!productId || !comment || !comment.trim()) {
+    return res.status(400).json({ error: "Product ID and a written review comment are required." });
+  }
+
+  const reviewId = generateId("rev_");
+  const numRating = Math.max(1, Math.min(5, Number(rating) || 5));
+  const now = new Date().toISOString();
+
+  try {
+    let targetVendorId = vendorId;
+    if (!targetVendorId) {
+      const prod = await query.get("SELECT vendorId FROM products WHERE id = ?", [productId]);
+      if (prod) targetVendorId = prod.vendorId;
+    }
+
+    const callerName = customerName || "Verified Purchaser";
+    const callerId = customerId || "u_customer";
+
+    await query.run(
+      `INSERT INTO reviews (id, productId, vendorId, customerId, customerName, rating, comment, imageUrl, verifiedPurchase, status, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'Approved', ?)`,
+      [reviewId, productId, targetVendorId || "v1", callerId, callerName, numRating, comment.trim(), imageUrl ? imageUrl.trim() : null, now]
+    );
+
+    const created = {
+      id: reviewId,
+      productId,
+      vendorId: targetVendorId || "v1",
+      customerId: callerId,
+      customerName: callerName,
+      rating: numRating,
+      comment: comment.trim(),
+      imageUrl: imageUrl ? imageUrl.trim() : null,
+      verifiedPurchase: 1,
+      status: "Approved",
+      createdAt: now
+    };
+
+    res.status(201).json(created);
+  } catch (err) {
+    console.error("Submit review error:", err);
+    res.status(500).json({ error: "Failed to submit review." });
+  }
+});
+
+// DELETE /api/reviews/:id - Delete/Moderate review
+app.delete("/api/reviews/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await query.run("DELETE FROM reviews WHERE id = ?", [id]);
+    res.json({ success: true, message: "Review deleted successfully." });
+  } catch (err) {
+    console.error("Delete review error:", err);
+    res.status(500).json({ error: "Failed to delete review." });
+  }
+});
+
 // ---------------- GEMINI AI SUITE & ECO DASHBOARD ----------------
 
 // Helper: Call Gemini API REST Endpoint
@@ -1675,7 +1763,7 @@ async function callGeminiApi(promptText, inlineImageBase64 = null, mimeType = "i
     return null;
   }
 
-  const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"];
+  const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"];
   const fetch = (await import("node-fetch")).default;
 
   for (const model of models) {

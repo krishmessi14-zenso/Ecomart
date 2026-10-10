@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import { getToolsForRole, getEcoFriendlyProducts, getMyOrders, getGreenPoints } from "./aiTools.js";
+import { getToolsForRole, getEcoFriendlyProducts, searchProducts, getMyOrders, getGreenPoints } from "./aiTools.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -173,6 +173,45 @@ export async function processAiChat({ message, selectedLanguage, history = [], u
     };
   }
 
+  // Fast Path: Product Display / Search Intent Handler
+  const displayKeywords = ["display", "show", "explain", "detail", "view", "find", "search", "recommend", "bag", "bottle", "brush", "straw", "product"];
+  if (displayKeywords.some((kw) => lowerMsg.includes(kw))) {
+    let searchTerm = lowerMsg
+      .replace(/^(display|show|open|view|explain|tell me about|recommend|find)\s+(that|the|a|an)?\s*/gi, "")
+      .replace(/product/gi, "")
+      .trim();
+
+    if (!searchTerm && history && history.length > 0) {
+      for (let i = history.length - 1; i >= 0; i--) {
+        const text = (history[i]?.text || "").toLowerCase();
+        if (text && !text.includes("display") && !text.includes("show")) {
+          searchTerm = text.replace(/^(explain|tell me about|what is|how about)\s+(that|the|a|an)?\s*/gi, "").trim();
+          if (searchTerm) break;
+        }
+      }
+    }
+
+    if (!searchTerm) searchTerm = "eco";
+    const searchRes = await searchProducts({ queryText: searchTerm });
+    const matchedProds = searchRes.products && searchRes.products.length > 0
+      ? searchRes.products
+      : (await getEcoFriendlyProducts()).products;
+
+    if (matchedProds && matchedProds.length > 0) {
+      let replyText = `🛍️ **Here are the product details for "${searchTerm}":**\n\n`;
+      matchedProds.slice(0, 3).forEach((p, idx) => {
+        replyText += `${idx + 1}. **${p.name}** — ₹${p.price} (EcoScore: ${p.ecoScore}/100, Material: ${p.materialType})\n`;
+      });
+      replyText += "\nTap any product card below to view complete specifications!";
+      return {
+        reply: replyText,
+        language,
+        recommendations: matchedProds.slice(0, 3),
+        actionTriggered: "search_products"
+      };
+    }
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey || apiKey.length < 10) {
@@ -188,7 +227,7 @@ export async function processAiChat({ message, selectedLanguage, history = [], u
     const systemInstruction = getSystemPrompt(user, language);
     const contents = sanitizeAndFormatHistory(history, cleanMessage);
 
-    const candidateModels = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-1.5-flash"];
+    const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"];
     const userRole = user ? user.role || "customer" : "customer";
     const { declarations: roleDeclarations, registry: roleRegistry } = getToolsForRole(userRole);
 

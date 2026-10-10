@@ -32,16 +32,7 @@ function VendorProfileBase() {
         if (found) {
           setVendor(found);
         } else {
-          // Fallback demo vendor if requested ID is not in backend yet
-          setVendor({
-            id: vendorId || "f1",
-            name: "Rajesh Patil",
-            storeName: "Patil EcoLiving Goods",
-            region: "Maharashtra",
-            verificationStatus: "Verified",
-            rating: 4.8,
-            about: "Offering premium eco-friendly, sustainable, and zero-waste products. Specializing in plastic-free packaging, organic personal care, and bamboo living goods.",
-            createdAt: "2024-01-15T00:00:00.000Z"});
+          setVendor(null);
         }
         setLoading(false);
       })

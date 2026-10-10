@@ -26,6 +26,7 @@ import { formatCurrency, formatDate } from "../../utils/formatters.js";
 import { useData } from "../../hooks/useData.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
 import { useNotifications } from "../../hooks/useNotifications.js";
+import { apiFetch } from "../../services/api.js";
 
 const ShieldIcon = () => (
   <svg
@@ -120,7 +121,7 @@ function AdminDashboardBase() {
 
   const fetchReviews = useCallback(async () => {
     try {
-      const res = await fetch("/api/reviews");
+      const res = await apiFetch("/api/reviews");
       if (res.ok) {
         const data = await res.json();
         setReviews(data);
@@ -265,7 +266,7 @@ function AdminDashboardBase() {
   const handleDeleteReview = useCallback(
     async (reviewId) => {
       try {
-        const res = await fetch(`/api/reviews/${reviewId}`, {
+        const res = await apiFetch(`/api/reviews/${reviewId}`, {
           method: "DELETE"});
         if (res.ok) {
           notifySuccess("Review moderated and deleted.");

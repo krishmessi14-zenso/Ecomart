@@ -1,13 +1,30 @@
 import { useState, useEffect, useMemo, useCallback, memo } from "react";
-import { useNavigate, useParams} from "react-router-dom";
-import { Check, Truck as TruckIcon, ClipboardList, X, RefreshCw, AlertTriangle, Calendar, MapPin } from "../../components/icons/Icons.jsx";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  Check,
+  Truck as TruckIcon,
+  ClipboardList,
+  X,
+  RefreshCw,
+  AlertTriangle,
+  Calendar,
+  MapPin,
+  Package,
+  ChevronDown,
+  ChevronUp
+} from "../../components/icons/Icons.jsx";
 import { EmptyState } from "../../components/common/EmptyState.jsx";
 import { Button } from "../../components/common/Button.jsx";
+import { Card } from "../../components/common/Card.jsx";
+import { Badge } from "../../components/common/Badge.jsx";
+import { Modal } from "../../components/common/Modal.jsx";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
+import { getProductImage } from "../../utils/constants.js";
 import { useData } from "../../hooks/useData.js";
 import { useAuth } from "../../hooks/useAuth.js";
 import { useLanguage } from "../../hooks/useLanguage.js";
 import { useNotifications } from "../../hooks/useNotifications.js";
+import { apiFetch } from "../../services/api.js";
 
 const ALL_STAGES = [
   "Order Placed",
@@ -16,10 +33,33 @@ const ALL_STAGES = [
   "Preparing",
   "Packed",
   "Ready for Pickup",
+  "Picked Up",
   "In Transit",
   "Out for Delivery",
   "Delivered"
 ];
+
+const STAGE_ADVANCE_MAP = {
+  "Order Placed": { next: "Accepted by Vendor", label: "Accept Order" },
+  "Pending": { next: "Accepted by Vendor", label: "Accept Order" },
+  "Payment Confirmed": { next: "Accepted by Vendor", label: "Accept Order" },
+  "Accepted by Vendor": { next: "Preparing", label: "Start Preparing" },
+  "Accepted": { next: "Preparing", label: "Start Preparing" },
+  "Preparing": { next: "Packed", label: "Pack Order" },
+  "Packed": { next: "Ready for Pickup", label: "Ready for Pickup" },
+  "Ready for Pickup": { next: "Picked Up", label: "Mark Picked Up" },
+  "Picked Up": { next: "In Transit", label: "Ship / In Transit" },
+  "In Transit": { next: "Out for Delivery", label: "Out for Delivery" },
+  "Out for Delivery": { next: "Delivered", label: "Mark Delivered" }
+};
+
+function getBadgeVariant(status = "") {
+  const s = status.toLowerCase();
+  if (s.includes("delivered")) return "success";
+  if (s.includes("cancel") || s.includes("reject")) return "danger";
+  if (s.includes("pending") || s.includes("placed")) return "warning";
+  return "info";
+}
 
 function TrackingTimeline({ order, timelineData }) {
   const currentStatus = timelineData?.currentStatus || order.status || "Order Placed";
@@ -27,15 +67,28 @@ function TrackingTimeline({ order, timelineData }) {
 
   if (isCancelled) {
     return (
-      <div className="flex items-center gap-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 p-3 rounded-xl text-xs font-semibold mt-3">
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          background: "var(--danger-light)",
+          border: "1px solid var(--danger-border)",
+          color: "var(--danger)",
+          padding: "12px 16px",
+          borderRadius: "var(--radius-md)",
+          fontSize: 13,
+          fontWeight: 700,
+          marginTop: 16
+        }}
+      >
         <X size={18} />
-        <span>Order Status: {currentStatus}</span>
+        <span>Order Delivery Cancelled: {currentStatus}</span>
       </div>
     );
   }
 
-  // Find index in ALL_STAGES matching current status
-  let currentIdx = ALL_STAGES.findIndex(s => s.toLowerCase() === currentStatus.toLowerCase());
+  let currentIdx = ALL_STAGES.findIndex((s) => s.toLowerCase() === currentStatus.toLowerCase());
   if (currentIdx === -1) {
     if (currentStatus === "Pending") currentIdx = 0;
     else if (currentStatus === "Accepted") currentIdx = 2;
@@ -43,58 +96,141 @@ function TrackingTimeline({ order, timelineData }) {
     else currentIdx = 0;
   }
 
+  const progressPercent = Math.min(100, Math.max(0, (currentIdx / (ALL_STAGES.length - 1)) * 100));
+
   return (
-    <div className="mt-5">
+    <div style={{ marginTop: 24, marginBottom: 20 }}>
       {/* Desktop Stepper Bar */}
-      <div className="hidden md:flex justify-between relative mb-8 px-2">
-        <div className="absolute top-[14px] left-[25px] right-[25px] h-[3px] bg-slate-200 dark:bg-slate-700 z-0" />
+      <div style={{ position: "relative", padding: "0 10px", marginBottom: 30 }}>
+        {/* Background track line */}
         <div
-          className="absolute top-[14px] left-[25px] h-[3px] bg-emerald-600 transition-all duration-500 z-0"
-          style={{ width: `${(currentIdx / (ALL_STAGES.length - 1)) * 94}%` }}
+          style={{
+            position: "absolute",
+            top: 14,
+            left: 20,
+            right: 20,
+            height: 3,
+            background: "var(--border)",
+            zIndex: 0
+          }}
+        />
+        {/* Active progress fill line */}
+        <div
+          style={{
+            position: "absolute",
+            top: 14,
+            left: 20,
+            width: `calc(${progressPercent}% - 20px)`,
+            height: 3,
+            background: "var(--brand)",
+            transition: "width 0.4s ease",
+            zIndex: 0
+          }}
         />
 
-        {ALL_STAGES.map((stage, idx) => {
-          const isDone = idx < currentIdx;
-          const isActive = idx === currentIdx;
-          const isUpcoming = idx > currentIdx;
+        <div style={{ display: "flex", justifyContent: "space-between", position: "relative", zIndex: 1 }}>
+          {ALL_STAGES.map((stage, idx) => {
+            const isDone = idx < currentIdx;
+            const isActive = idx === currentIdx;
 
-          return (
-            <div key={stage} className="flex flex-col items-center relative z-10 w-16">
+            let bgColor = "var(--surface)";
+            let textColor = "var(--text-soft)";
+            let borderColor = "var(--border)";
+
+            if (isDone) {
+              bgColor = "var(--brand)";
+              textColor = "#ffffff";
+              borderColor = "var(--brand)";
+            } else if (isActive) {
+              bgColor = "var(--brand-light)";
+              textColor = "var(--brand)";
+              borderColor = "var(--brand)";
+            }
+
+            return (
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-all ${
-                  isDone
-                    ? "bg-emerald-600 border-2 border-emerald-600 text-white shadow-xs"
-                    : isActive
-                    ? "bg-amber-500 border-2 border-amber-500 text-white shadow-md ring-4 ring-amber-100 dark:ring-amber-950/50"
-                    : "bg-slate-100 dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-700 text-slate-400"
-                }`}
+                key={stage}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: 68,
+                  textAlign: "center"
+                }}
               >
-                {isDone ? <Check size={13} /> : isActive ? <RefreshCw size={12} className="animate-spin" /> : <ClipboardList size={11} />}
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    background: bgColor,
+                    color: textColor,
+                    border: `2px solid ${borderColor}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    boxShadow: isActive ? "0 0 0 4px var(--brand-light)" : "none",
+                    transition: "all 0.2s ease"
+                  }}
+                >
+                  {isDone ? <Check size={14} /> : isActive ? <RefreshCw size={13} style={{ animation: "spin 2s linear infinite" }} /> : idx + 1}
+                </div>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    marginTop: 6,
+                    fontWeight: isActive ? 800 : isDone ? 700 : 500,
+                    color: isActive ? "var(--brand)" : isDone ? "var(--text)" : "var(--text-soft)",
+                    lineHeight: 1.2
+                  }}
+                >
+                  {stage}
+                </span>
               </div>
-              <span
-                className={`text-[10px] mt-2 text-center whitespace-normal leading-tight font-medium ${
-                  isActive ? "font-bold text-amber-600 dark:text-amber-400" : isDone ? "text-slate-800 dark:text-slate-200" : "text-slate-400"
-                }`}
-              >
-                {stage}
-              </span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
-      {/* Active Stage Detail */}
-      <div className="bg-emerald-50/70 dark:bg-slate-800/60 p-3.5 rounded-xl border border-emerald-100 dark:border-slate-700">
-        <div className="flex items-center justify-between">
-          <strong className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-            ● Active Delivery Phase: {currentStatus}
-          </strong>
-          {timelineData?.estimatedDelivery && (
-            <span className="text-[11px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-              <Calendar size={12} /> Expected by: {timelineData.estimatedDelivery}
-            </span>
-          )}
+      {/* Active Phase Banner */}
+      <div
+        style={{
+          background: "var(--brand-light)",
+          border: "1px solid var(--brand-border)",
+          padding: "14px 18px",
+          borderRadius: "var(--radius-md)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 10
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "var(--brand-dark)" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--brand)" }} />
+          <span>Active Delivery Phase: {currentStatus}</span>
         </div>
+        {timelineData?.estimatedDelivery && (
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              fontWeight: 700,
+              color: "var(--brand-dark)",
+              background: "var(--surface)",
+              padding: "4px 10px",
+              borderRadius: 20,
+              border: "1px solid var(--brand-border)"
+            }}
+          >
+            <Calendar size={13} />
+            <span>Expected Delivery: {timelineData.estimatedDelivery}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -102,7 +238,7 @@ function TrackingTimeline({ order, timelineData }) {
 
 function OrderTrackingBase() {
   const { t } = useLanguage();
-  const { orders, products, refreshData } = useData();
+  const { orders, products, updateOrderStatus, refreshData } = useData();
   const { user: currentUser } = useAuth();
   const { notifySuccess, notifyError } = useNotifications();
   const navigate = useNavigate();
@@ -111,12 +247,72 @@ function OrderTrackingBase() {
   const [timelines, setTimelines] = useState({});
   const [expandedHistory, setExpandedHistory] = useState({});
   const [cancellingId, setCancellingId] = useState(null);
+  const [advancingId, setAdvancingId] = useState(null);
 
-  // Filter orders for current customer
+  // Review state
+  const [reviewModalItem, setReviewModalItem] = useState(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewImageUrl, setReviewImageUrl] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewedItemIds, setReviewedItemIds] = useState({});
+
+  const handleOpenReview = (item, prod) => {
+    setReviewModalItem({ item, product: prod });
+    setReviewRating(5);
+    setReviewComment("");
+    setReviewImageUrl("");
+  };
+
+  const handleSubmitReview = async (e) => {
+    e.preventDefault();
+    if (!reviewComment.trim()) {
+      notifyError("Written review comment is required.");
+      return;
+    }
+    setSubmittingReview(true);
+    try {
+      const targetProdId = reviewModalItem.product?.id || reviewModalItem.item.productId;
+      const targetVendorId = reviewModalItem.product?.vendorId || reviewModalItem.item.vendorId;
+
+      const res = await apiFetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: targetProdId,
+          vendorId: targetVendorId,
+          customerId: currentUser?.id || "u_customer",
+          customerName: currentUser?.name || "Verified Customer",
+          rating: reviewRating,
+          comment: reviewComment.trim(),
+          imageUrl: reviewImageUrl.trim() || null
+        })
+      });
+
+      if (res.ok) {
+        notifySuccess("Thank you! Product review submitted successfully.");
+        const key = reviewModalItem.item.itemId || reviewModalItem.item.id;
+        setReviewedItemIds((prev) => ({ ...prev, [key]: true }));
+        setReviewModalItem(null);
+      } else {
+        const errData = await res.json();
+        notifyError(errData.error || "Failed to submit review.");
+      }
+    } catch {
+      notifyError("Failed to submit review.");
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  // Filter orders for current customer / vendor
   const customerOrders = useMemo(() => {
-    const list = orders.filter(
-      (o) => (currentUser?.id && o.customerId === currentUser.id) || (currentUser?.name && o.customerName === currentUser.name)
-    );
+    const list = orders.filter((o) => {
+      if (currentUser?.role === "vendor") {
+        return o.vendorId && String(o.vendorId) === String(currentUser.id);
+      }
+      return (currentUser?.id && o.customerId === currentUser.id) || (currentUser?.name && o.customerName === currentUser.name);
+    });
     if (orderId) {
       const match = list.find((o) => o.id === orderId);
       return match ? [match] : [];
@@ -165,6 +361,38 @@ function OrderTrackingBase() {
     });
   }, [groupedOrders, fetchTimeline]);
 
+  // Advance delivery status
+  const handleAdvanceStatus = async (orderId, nextStatus) => {
+    setAdvancingId(orderId);
+    try {
+      const res = await fetch(`/api/delivery/${orderId}/status`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(currentUser?.token ? { Authorization: `Bearer ${currentUser.token}` } : {})
+        },
+        body: JSON.stringify({
+          status: nextStatus,
+          message: `Status updated to ${nextStatus}`
+        })
+      });
+
+      if (res.ok) {
+        if (updateOrderStatus) updateOrderStatus(orderId, nextStatus);
+        notifySuccess(`Order #${orderId} updated to: ${nextStatus}`);
+        fetchTimeline(orderId);
+        if (refreshData) refreshData();
+      } else {
+        const err = await res.json();
+        notifyError(err.error || "Failed to update order status.");
+      }
+    } catch {
+      notifyError("Failed to update order status.");
+    } finally {
+      setAdvancingId(null);
+    }
+  };
+
   // Handle customer order cancellation when eligible
   const handleCancelOrder = async (id) => {
     if (!window.confirm(`Are you sure you want to cancel order #${id}?`)) return;
@@ -201,15 +429,17 @@ function OrderTrackingBase() {
     setExpandedHistory((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const getProductName = (prodId) => products.find((p) => p.id === prodId)?.name || "EcoMart Product";
+  const getProduct = (prodId) => products.find((p) => p.id === prodId);
+
+  const pageTitle = t("navigation.orderTracking") || t("orderTracking") || "Order Delivery Tracking";
 
   if (groupedOrders.length === 0) {
     return (
-      <div className="fc-page-transition p-4">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-4">{t("orderTracking")}</h1>
+      <div className="fc-page-transition" style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
+        <h1 className="fc-h1" style={{ marginBottom: 20 }}>{pageTitle}</h1>
         <EmptyState
-          icon={<TruckIcon size={32} />}
-          title={t("noOrdersYet")}
+          icon={<TruckIcon size={36} />}
+          title={t("noOrdersYet") || "No Active Deliveries"}
           description="You haven't placed any sustainable orders on EcoMart yet."
           action={
             <Button variant="primary" onClick={() => navigate("/customer/marketplace")}>
@@ -222,15 +452,16 @@ function OrderTrackingBase() {
   }
 
   return (
-    <div className="fc-page-transition p-4 max-w-5xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div className="fc-page-transition" style={{ padding: "24px", maxWidth: 1080, margin: "0 auto" }}>
+      {/* Page Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{t("orderTracking")}</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          <h1 className="fc-h1" style={{ margin: 0, fontSize: 26, fontWeight: 800 }}>{pageTitle}</h1>
+          <p className="fc-muted" style={{ margin: "4px 0 0 0", fontSize: 13 }}>
             Real-time delivery progress, ETA timelines, and zero-waste shipping history.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => navigate("/customer/marketplace")}>
+        <Button variant="outline" size="sm" onClick={() => navigate("/customer/marketplace")} style={{ fontWeight: 700 }}>
           ← Continue Shopping
         </Button>
       </div>
@@ -239,87 +470,189 @@ function OrderTrackingBase() {
         const timeline = timelines[o.id];
         const status = timeline?.currentStatus || o.status || "Order Placed";
         const isEligibleCancel = ["Order Placed", "Payment Confirmed", "Pending"].includes(status);
+        const stageAdvance = STAGE_ADVANCE_MAP[status];
 
         return (
-          <div
+          <Card
             key={o.id}
-            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 mb-6"
+            style={{
+              padding: "24px",
+              marginBottom: 24,
+              boxShadow: "var(--shadow-sm)",
+              borderRadius: "var(--radius-md)"
+            }}
           >
-            {/* Header */}
-            <div className="flex flex-wrap items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 gap-2">
+            {/* Order Card Header */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+                paddingBottom: 16,
+                borderBottom: "1px solid var(--border)"
+              }}
+            >
               <div>
-                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                  Order #{o.id}
+                <h3 className="fc-h3" style={{ margin: 0, fontSize: 18, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span>Order #{o.id}</span>
                   {timeline?.isDelayed && (
-                    <span className="text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1 border border-amber-300">
-                      <AlertTriangle size={12} /> Delivery May Be Delayed
-                    </span>
+                    <Badge variant="warning" style={{ fontSize: 11, fontWeight: 800 }}>
+                      <AlertTriangle size={12} style={{ marginRight: 4 }} /> Delivery Delayed
+                    </Badge>
                   )}
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Placed on {formatDate(o.createdAt)} • Total: <strong className="text-emerald-600 dark:text-emerald-400">{formatCurrency(o.totalAmount, o.currency)}</strong>
+                <p className="fc-soft" style={{ margin: "4px 0 0 0", fontSize: 12.5 }}>
+                  Placed on {formatDate(o.createdAt)} • Total:{" "}
+                  <strong style={{ color: "var(--brand)", fontSize: 14 }}>{formatCurrency(o.totalAmount, o.currency)}</strong>
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                {isEligibleCancel && (
-                  <button
-                    onClick={() => handleCancelOrder(o.id)}
-                    disabled={cancellingId === o.id}
-                    className="px-3 py-1.5 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-600 hover:text-white dark:bg-rose-950/40 dark:text-rose-300 rounded-lg border border-rose-200 dark:border-rose-800 transition-all"
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                {/* Advance Order Status Button (For Vendor/Admin or Next Stage) */}
+                {stageAdvance && (currentUser?.role === "vendor" || currentUser?.role === "admin") && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={advancingId === o.id}
+                    onClick={() => handleAdvanceStatus(o.id, stageAdvance.next)}
+                    style={{ fontWeight: 700 }}
                   >
-                    {cancellingId === o.id ? "Cancelling..." : "Cancel Order"}
-                  </button>
+                    {advancingId === o.id ? "Updating..." : `➡️ ${stageAdvance.label}`}
+                  </Button>
                 )}
 
-                <span className="px-3 py-1 text-xs font-bold rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                {/* Cancel Button */}
+                {isEligibleCancel && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={cancellingId === o.id}
+                    onClick={() => handleCancelOrder(o.id)}
+                    style={{ color: "var(--danger)", borderColor: "var(--danger-border)", fontWeight: 700 }}
+                  >
+                    {cancellingId === o.id ? "Cancelling..." : "Cancel Order"}
+                  </Button>
+                )}
+
+                <Badge variant={getBadgeVariant(status)} style={{ fontSize: 12, fontWeight: 800, padding: "6px 14px" }}>
                   {status}
-                </span>
+                </Badge>
               </div>
             </div>
 
-            {/* Stepper Timeline */}
+            {/* Stepper Timeline Bar */}
             <TrackingTimeline order={o} timelineData={timeline} />
 
-            {/* Shipment Items */}
-            <div className="mt-5">
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Shipment Contents</h4>
-              <div className="flex flex-col gap-2">
-                {o.items.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex justify-between items-center bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl text-xs border border-slate-100 dark:border-slate-800"
-                  >
-                    <span className="font-medium text-slate-800 dark:text-slate-200">
-                      <strong>{getProductName(item.productId)}</strong> × {item.qty} units
-                    </span>
-                    <span className="font-bold text-slate-700 dark:text-slate-300">{formatCurrency(item.amount, o.currency)}</span>
-                  </div>
-                ))}
+            {/* Shipment Contents List */}
+            <div style={{ marginTop: 20 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 800, margin: "0 0 10px 0", color: "var(--text)" }}>Shipment Contents</h4>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {o.items.map((item, idx) => {
+                  const prod = getProduct(item.productId);
+                  const img = getProductImage(prod);
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        background: "var(--bg-soft)",
+                        padding: "10px 14px",
+                        borderRadius: "var(--radius-sm)",
+                        border: "1px solid var(--border)",
+                        fontSize: 13
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <img
+                          src={img}
+                          alt={prod?.name || "Product"}
+                          style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover", flexShrink: 0 }}
+                        />
+                        <div>
+                          <strong style={{ color: "var(--text)" }}>{prod?.name || item.productId}</strong>
+                          <div className="fc-soft" style={{ fontSize: 11.5 }}>
+                            Qty: {item.qty} units × {formatCurrency(item.unitPrice || (item.amount / item.qty), o.currency)}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <strong style={{ fontSize: 14, color: "var(--brand)" }}>{formatCurrency(item.amount, o.currency)}</strong>
+                        {status === "Delivered" && (
+                          reviewedItemIds[item.itemId || item.id] ? (
+                            <span style={{ fontSize: 12, color: "var(--brand)", fontWeight: 700 }}>✓ Reviewed</span>
+                          ) : (
+                            <Button size="sm" variant="accent" onClick={() => handleOpenReview(item, prod)} style={{ fontSize: 11, fontWeight: 700 }}>
+                              ✍️ Give Review
+                            </Button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* Detailed History Audit Toggle */}
             {timeline?.history && timeline.history.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
                 <button
+                  type="button"
                   onClick={() => toggleHistory(o.id)}
-                  className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: "var(--brand)",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    padding: 0
+                  }}
                 >
-                  📜 {expandedHistory[o.id] ? "Hide Delivery Audit History" : "View Detailed Status Log & Audit History"}
+                  <ClipboardList size={15} />
+                  <span>{expandedHistory[o.id] ? "Hide Delivery Audit History" : "View Detailed Status Log & Audit History"}</span>
+                  {expandedHistory[o.id] ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
 
                 {expandedHistory[o.id] && (
-                  <div className="mt-3 flex flex-col gap-2 bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                      background: "var(--bg-soft)",
+                      padding: "14px 18px",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--border)"
+                    }}
+                  >
                     {timeline.history.map((h) => (
-                      <div key={h.id} className="flex flex-col border-b border-slate-200 dark:border-slate-800 pb-2 last:border-0 last:pb-0">
-                        <div className="flex justify-between font-bold text-slate-800 dark:text-slate-200">
-                          <span>● {h.status}</span>
-                          <span className="text-[10px] text-slate-400 font-normal">{formatDate(h.timestamp)}</span>
+                      <div
+                        key={h.id}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          paddingBottom: 8,
+                          borderBottom: "1px solid var(--border)"
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, fontWeight: 700 }}>
+                          <span style={{ color: "var(--text)" }}>● {h.status}</span>
+                          <span className="fc-soft" style={{ fontSize: 11.5, fontWeight: 500 }}>{formatDate(h.timestamp)}</span>
                         </div>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-400 m-0 mt-0.5">{h.message || "Status updated."}</p>
-                        <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                          <MapPin size={10} /> {h.location || "EcoMart Logistics Facility"} • Updated by {h.updatedBy || "System"} ({h.updatedByRole})
+                        <p className="fc-muted" style={{ margin: "3px 0", fontSize: 12 }}>
+                          {h.message || "Delivery status updated."}
+                        </p>
+                        <span className="fc-soft" style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+                          <MapPin size={11} /> {h.location || "EcoMart Logistics Facility"} • Updated by {h.updatedBy || "System"} ({h.updatedByRole})
                         </span>
                       </div>
                     ))}
@@ -327,9 +660,105 @@ function OrderTrackingBase() {
                 )}
               </div>
             )}
-          </div>
+          </Card>
         );
       })}
+
+      {/* Post-Delivery Product Review Modal */}
+      {reviewModalItem && (
+        <Modal
+          open={!!reviewModalItem}
+          onClose={() => setReviewModalItem(null)}
+          title="Product Delivery Review"
+        >
+          <form onSubmit={handleSubmitReview} style={{ padding: "4px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--bg-soft)", padding: 12, borderRadius: "var(--radius-md)", marginBottom: 16 }}>
+              <img
+                src={getProductImage(reviewModalItem.product)}
+                alt={reviewModalItem.product?.name || "Product"}
+                style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover" }}
+              />
+              <div>
+                <strong style={{ fontSize: 14, display: "block", color: "var(--text)" }}>
+                  {reviewModalItem.product?.name || "Delivered Product"}
+                </strong>
+                <span className="fc-soft" style={{ fontSize: 12 }}>
+                  Verified Delivered Order Item
+                </span>
+              </div>
+            </div>
+
+            {/* Rating Picker */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+                Rating (1 to 5 Stars) *
+              </label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    type="button"
+                    key={star}
+                    onClick={() => setReviewRating(star)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      fontSize: 24,
+                      cursor: "pointer",
+                      color: star <= reviewRating ? "#f59e0b" : "#cbd5e1"
+                    }}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Written Review Text Area */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+                Written Review Comment *
+              </label>
+              <textarea
+                required
+                rows={4}
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Write your review for this product after delivery..."
+                className="fc-input"
+                style={{ width: "100%", padding: 10, fontSize: 13, fontFamily: "inherit" }}
+              />
+            </div>
+
+            {/* Optional Image URL */}
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+                Product Image URL (Optional)
+              </label>
+              <input
+                type="text"
+                value={reviewImageUrl}
+                onChange={(e) => setReviewImageUrl(e.target.value)}
+                placeholder="Paste optional product image link..."
+                className="fc-input"
+                style={{ width: "100%", padding: "8px 12px", fontSize: 13 }}
+              />
+              <span className="fc-soft" style={{ fontSize: 11, marginTop: 4, display: "block" }}>
+                Adding a picture is optional. Written review is required.
+              </span>
+            </div>
+
+            {/* Form Actions */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <Button type="button" variant="outline" onClick={() => setReviewModalItem(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={submittingReview}>
+                {submittingReview ? "Submitting..." : "Submit Review"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }
