@@ -1864,7 +1864,10 @@ app.get("/api/customer/eco-dashboard", authenticateToken, async (req, res) => {
 });
 
 // Serve static frontend in production if dist/ exists
-const distPath = path.join(__dirname, "../dist");
+const distPath = fs.existsSync(path.join(__dirname, "../frontend/dist"))
+  ? path.join(__dirname, "../frontend/dist")
+  : path.join(__dirname, "../dist");
+
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   app.get("*", (req, res, next) => {

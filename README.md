@@ -34,10 +34,19 @@ EcoMart is a full-stack sustainable-products marketplace connecting **Customers*
 - **npm**: v9.x or higher
 
 ### 2. Installation
-Install root dependencies and backend dependencies:
+Install root, backend, and frontend dependencies:
 ```bash
 npm install
 npm install --prefix backend
+npm install --prefix frontend
+```
+
+### 📁 Project Structure
+```text
+EcoMart
+├── backend/    # Express REST API, Database layer, AI & payment services
+├── frontend/   # React 19 + Vite 8 client application & components
+└── docs/       # Architecture & live deployment guides
 ```
 
 ### 3. Environment Setup

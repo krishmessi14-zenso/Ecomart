@@ -52,11 +52,10 @@ backend.on("exit", (code) => {
 });
 
 // Start Vite Frontend
-const vitePath = path.join(__dirname, "node_modules", "vite", "bin", "vite.js");
-const frontend = spawn("node", [vitePath], {
+const frontend = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "dev"], {
   stdio: "inherit",
-  shell: false,
-  cwd: __dirname,
+  shell: true,
+  cwd: path.join(__dirname, "frontend"),
 });
 
 frontend.on("exit", (code) => {
