@@ -5,3 +5,83 @@ RUN npm install
 COPY . .
 EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+
+docker build -t my-react-app .
+docker run -d -p 5173:5173 --name react-app my-react-app
+docker images
+docker ps
+docker stop react-app
+docker start react-app
+docker rm -f react-app
+
+pipline code 1:
+pipeline {
+    agent any
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/YOUR_USERNAME/student-task-manager.git'
+            }
+        }
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+        stage('Code Check') {
+            steps {
+                sh 'npm run lint'
+            }
+        }
+        stage('Build React App') {
+            steps {
+                sh 'npm run build'
+            }
+        }
+    }
+    post {
+        success {
+            archiveArtifacts artifacts: 'dist/**',
+                             fingerprint: true
+        }
+        always {
+            echo 'Pipeline execution completed.'
+        }
+    }
+}
+pipline 2:
+pipeline {
+    agent any
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('Install') {
+            steps {
+                bat 'npm install'
+            }
+        }
+        stage('Build') {
+            steps {
+                bat 'npm run build'
+            }
+        }
+    }
+    post {
+        success {
+            archiveArtifacts artifacts: 'dist/**',
+                             fingerprint: true
+        }
+    }
+}
+
+freestyle code:
+call npm install
+if errorlevel 1 exit /b 1
+
+call npm run build
+if errorlevel 1 exit /b 1
